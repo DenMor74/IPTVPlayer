@@ -15,6 +15,12 @@
         <Execute>
           <option name="pattern" value="$env:JAVA_HOME=C:Program FilesAndroidAndroid Studiojbr" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="git diff *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="git checkout *" />
+        </Execute>
       </list>
     </option>
   </component>

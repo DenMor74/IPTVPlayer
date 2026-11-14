@@ -21,6 +21,7 @@ import com.iptv.player.ui.GuideScreen
 import com.iptv.player.ui.IptvTheme
 import com.iptv.player.ui.PlayerOverlay
 import com.iptv.player.ui.SettingsScreen
+import com.iptv.player.ui.ErrorBar
 import com.iptv.player.ui.ToastBar
 import com.iptv.player.ui.VideoSurface
 
@@ -56,6 +57,7 @@ private fun App(vm: MainViewModel) {
         if (screen == Screen.GUIDE) GuideScreen(vm)
         if (screen == Screen.SETTINGS) SettingsScreen(vm)
         if (ui.debug) DebugOverlay(vm.controller)
+        ErrorBar(vm)
         ToastBar(vm)
     }
 }

@@ -94,7 +94,7 @@ fun GuideScreen(vm: MainViewModel) {
         ) {
             LazyColumn(
                 Modifier
-                    .width(260.dp)
+                    .width(180.dp)
                     .fillMaxHeight()
                     .padding(12.dp)
                     .onFocusChanged { if (it.hasFocus) categoriesExpanded = true }
@@ -134,7 +134,7 @@ fun GuideScreen(vm: MainViewModel) {
         // ---------- 2. каналы ----------
         LazyColumn(
             modifier = Modifier
-                .weight(0.40f)
+                .weight(0.50f)
                 .fillMaxHeight()
                 .padding(12.dp)
                 .onFocusChanged { if (it.hasFocus) categoriesExpanded = false }
@@ -158,10 +158,10 @@ fun GuideScreen(vm: MainViewModel) {
                 ) {
                     Text("${ch.number}", color = Muted, fontSize = 17.sp, modifier = Modifier.width(44.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(ch.name, color = Color.White, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (title != null) Text(title, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(ch.name, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (title != null) Text(title, color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    if (ch.id == current?.id) Text("▶", color = Accent, fontSize = 18.sp)
+                    if (ch.id == current?.id) Text("▶", color = Accent, fontSize = 22.sp)
                 }
             }
         }

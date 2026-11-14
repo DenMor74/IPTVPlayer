@@ -1,6 +1,7 @@
 package com.iptv.player.player
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
@@ -67,6 +68,8 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
     var current: Channel? = null
         private set
 
+    val error = MutableStateFlow<String?>(null)
+
     private val http = DefaultHttpDataSource.Factory()
         .setUserAgent(Endpoints.USER_AGENT)          // прокси узнаёт плеер по User-Agent
         .setConnectTimeoutMs(3000)
@@ -100,9 +103,19 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) retries = 0
             }
-            override fun onPlayerError(error: PlaybackException) {
-                // быстрая повторная попытка (смена базы на прокси происходит за кадром)
-                if (retries++ < 4) main.postDelayed({ player.prepare() }, 800)
+            override fun onPlayerError(ex: PlaybackException) {
+                // закрываем соединение и заново запрашиваем, показываем сообщение
+                val msg = when {
+                    ex.message?.contains("timeout", ignoreCase = true) == true -> "Таймаут подключения, перезапуск..."
+                    ex.message?.contains("IOException", ignoreCase = true) == true -> "Ошибка сети, перезапуск..."
+                    else -> "Ошибка воспроизведения, перезапуск..."
+                }
+                error.value = msg
+                retries++
+                main.postDelayed({
+                    player.stop()
+                    player.prepare()
+                }, 500)
             }
         })
         player.addAnalyticsListener(object : AnalyticsListener {

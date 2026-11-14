@@ -115,35 +115,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun startEpg(fromCache: Boolean) {
         epgJob?.cancel()
         epgJob = viewModelScope.launch {
-            if (fromCache) loadEpgFromCache()
-            refreshEpg()
+            // Кэш и сеть — полностью параллельно, кто первый с актуальными данными — тот и победил
+            val cacheJob = if (fromCache) {
+                async { loadEpgFromCache() }
+            } else null
+            val netJob = async { refreshEpg() }
+            // Ждём оба — первый кто вернёт актуальные данные, уже опубликован внутри
+            cacheJob?.await()
+            netJob.await()
         }
     }
 
     private suspend fun loadEpgFromCache() {
         val chs = channels.value
         val t = System.currentTimeMillis()
-        for (name in listOf("epg_hourly.xml", "epg_today.xml", "epg.xml")) {
-            val m = repo.cachedEpg(name, chs, t) ?: continue
-            if (EpgLogic.isActual(m, t)) { publish(m, "кэш $name", overwrite = true); return }
+        // Параллельно читаем все 3 кэш-файла
+        val hourlyDeferred = viewModelScope.async { repo.cachedEpg("epg_hourly.xml", chs, t) }
+        val todayDeferred = viewModelScope.async { repo.cachedEpg("epg_today.xml", chs, t) }
+        val weekDeferred = viewModelScope.async { repo.cachedEpg("epg.xml", chs, t) }
+
+        // Проверяем по приоритету
+        for ((name, deferred) in listOf(
+            "epg_hourly.xml" to hourlyDeferred,
+            "epg_today.xml" to todayDeferred,
+            "epg.xml" to weekDeferred
+        )) {
+            val m = deferred.await()
+            if (m != null && EpgLogic.isActual(m, t)) {
+                publish(m, "кэш $name", overwrite = true)
+                return
+            }
         }
     }
 
-    /** hourly -> today -> week; today качается параллельно с hourly, week только если оба неактуальны. */
+    /** hourly и today — параллельно; week — если оба не актуальны. */
     private suspend fun refreshEpg() = coroutineScope {
         val chs = channels.value
         if (chs.isEmpty()) return@coroutineScope
-        val b = base()
         val t = System.currentTimeMillis()
-        val todayJob = async { repo.fetchEpg(b, "epg_today.xml", chs, t) }
+        // Параллельная загрузка hourly + today
+        val hourlyJob = async { repo.fetchEpg(base(), "epg_hourly.xml", chs, t) }
+        val todayJob = async { repo.fetchEpg(base(), "epg_today.xml", chs, t) }
+
         var actual = false
-        val hourlyRes = repo.fetchEpg(b, "epg_hourly.xml", chs, t)
+        // Проверяем hourly
+        val hourlyRes = hourlyJob.await()
         if (hourlyRes is LoadResult.Success) {
             val hourly = hourlyRes.data
             if (EpgLogic.isActual(hourly, t)) { publish(hourly, "hourly", overwrite = true); actual = true }
         } else if (hourlyRes is LoadResult.Error && chs.isNotEmpty() && epg.value.isEmpty()) {
             showToast(hourlyRes.message)
         }
+        // Проверяем today
         val todayRes = todayJob.await()
         if (todayRes is LoadResult.Success) {
             val today = todayRes.data
@@ -152,8 +175,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 actual = true
             }
         }
+        // Week — только если оба не актуальны
         if (!actual) {
-            val weekRes = repo.fetchEpg(b, "epg.xml", chs, t)
+            val weekRes = repo.fetchEpg(base(), "epg.xml", chs, t)
             if (weekRes is LoadResult.Success) {
                 val week = weekRes.data
                 publish(week, "week", overwrite = true)

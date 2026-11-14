@@ -201,19 +201,20 @@ private fun OsdPanel(ch: Channel?, epg: Map<String, List<Programme>>, now: Long)
     }
 }
 
-/** Отладка: компактные сегменты и статистика, прижата к низу. */
+/** Отладка: компактные сегменты и статистика в строчку, прижата к низу. */
 @Composable
 fun DebugOverlay(c: PlayerController) {
     LaunchedEffect(Unit) { while (true) { c.refreshDebug(); delay(500) } }
     val d = c.debug
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-        Column(
+        Row(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(bottom = 2.dp, end = 8.dp)
                 .glass(6.dp)
                 .padding(horizontal = 5.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 d.segs.toList().forEach { s ->
@@ -244,5 +245,16 @@ fun ToastBar(vm: MainViewModel) {
         Box(Modifier.fillMaxSize().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
             Text(msg, color = Color.White, fontSize = 22.sp, modifier = Modifier.glass().padding(horizontal = 24.dp, vertical = 12.dp))
         }
+    }
+}
+
+@Composable
+fun ErrorBar(vm: MainViewModel) {
+    val e by vm.controller.error.collectAsStateWithLifecycle()
+    e?.let { msg ->
+        Box(Modifier.fillMaxSize().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
+            Text(msg, color = Color(0xFFFFAB91), fontSize = 22.sp, modifier = Modifier.glass().padding(horizontal = 24.dp, vertical = 12.dp))
+        }
+        vm.controller.error.value = null
     }
 }
