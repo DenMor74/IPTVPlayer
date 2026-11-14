@@ -26,7 +26,6 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
-import androidx.media3.exoplayer.source.TrackGroupArray
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection
 import androidx.media3.exoplayer.upstream.Allocator
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
@@ -58,8 +57,10 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
     val debug = DebugState()
     private val main = Handler(Looper.getMainLooper())
     private var retries = 0
+    // minBufferMs = 40s, maxBufferMs = 45s: быстрый старт (150мс), отсутствие нижнего порога
+    // и постоянная равномерная дозагрузка сегментов каждые ~5 сек для удержания максимального буфера.
     private val loadControl = DefaultLoadControl.Builder()
-        .setBufferDurationsMs(15000, 45000, 150, 500)
+        .setBufferDurationsMs(40000, 45000, 150, 500)
         .setPrioritizeTimeOverSizeThresholds(true)
         .setBackBuffer(0, false)
         .build()
