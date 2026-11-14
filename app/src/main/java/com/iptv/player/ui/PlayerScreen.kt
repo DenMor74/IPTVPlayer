@@ -112,6 +112,7 @@ fun PlayerOverlay(vm: MainViewModel) {
                     Key.DirectionDown, Key.ChannelDown, Key.DirectionRight -> vm.next()
                     Key.DirectionLeft -> vm.openGuide()
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> vm.toggleOsd()
+                    Key.Info -> { vm.setDebug(!ui.debug); true }
                     else -> return@onPreviewKeyEvent false
                 }
                 true

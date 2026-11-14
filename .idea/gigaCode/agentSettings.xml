@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="GigaCodeAgentSettings">
+    <option name="autoApprovedCommands">
+      <list>
+        <Execute>
+          <option name="pattern" value="cd *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value=".\gradlew.bat assembleDebug --no-daemon" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Get-ChildItem &quot;C:\Program Files\Android&quot; -Recurse -Filter &quot;java.exe&quot; -ErrorAction SilentlyContinue" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="$env:JAVA_HOME=C:Program FilesAndroidAndroid Studiojbr" />
+        </Execute>
+      </list>
+    </option>
+  </component>
+</project>
