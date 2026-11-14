@@ -147,10 +147,7 @@ private fun PermanentClockOverlay(now: Long, position: String) {
             text = hm.format(Date(now)),
             color = Color.White,
             fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .glass(10.dp)
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -204,7 +201,7 @@ private fun OsdPanel(ch: Channel?, epg: Map<String, List<Programme>>, now: Long)
     }
 }
 
-/** Отладка: прямоугольники сегментов (качается / скачан / играет / ошибка) и короткая статистика буфера. */
+/** Отладка: компактные сегменты и статистика, прижата к низу. */
 @Composable
 fun DebugOverlay(c: PlayerController) {
     LaunchedEffect(Unit) { while (true) { c.refreshDebug(); delay(500) } }
@@ -212,22 +209,23 @@ fun DebugOverlay(c: PlayerController) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
         Column(
             Modifier
-                .padding(bottom = 0.dp, end = 24.dp)
-                .glass(8.dp)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 2.dp, end = 8.dp)
+                .glass(6.dp)
+                .padding(horizontal = 5.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 d.segs.toList().forEach { s ->
                     Box(
                         Modifier
-                            .size(24.dp, 14.dp)
-                            .clip(RoundedCornerShape(3.dp))
+                            .size(10.dp, 6.dp)
+                            .clip(RoundedCornerShape(2.dp))
                             .background(segColor(s, d.playingKey))
                     )
                 }
             }
-            Text(d.stat, color = Color.White, fontSize = 14.sp)
+            Text(d.stat, color = Color.White, fontSize = 9.sp)
         }
     }
 }

@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "1.5"
+        versionName = "1.8"
     }
     buildTypes {
         release { isMinifyEnabled = false }
@@ -28,6 +28,24 @@ androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
             output.outputFileName.set("IPTVPlayer-v${android.defaultConfig.versionName}-${variant.name}.apk")
+        }
+    }
+}
+
+tasks.register("copyApkToShare") {
+    dependsOn("assembleDebug")
+    doLast {
+        val apkDir = file("build/outputs/apk/debug")
+        val apkFile = apkDir.listFiles().filter { it.name.endsWith(".apk") }.maxByOrNull { it.lastModified() }
+        if (apkFile != null) {
+            val sharePath = "\\\\ha\\SHARE\\_TV\\"
+            copy {
+                from(apkFile)
+                into(sharePath)
+            }
+            println("Copied ${apkFile.name} to $sharePath")
+        } else {
+            println("No APK found to copy")
         }
     }
 }

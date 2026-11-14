@@ -70,13 +70,12 @@ fun GuideScreen(vm: MainViewModel) {
     var focusedProg by remember { mutableStateOf<Programme?>(null) }
     var categoriesExpanded by remember { mutableStateOf(false) }
 
-    val groups = remember(channels) { channels.map { it.group }.distinct() }
+    val groups by vm.guideGroups.collectAsStateWithLifecycle()
     val shown = remember(channels, group) { if (group == ALL) channels else channels.filter { it.group == group } }
-    val hm = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-
     val chList = rememberLazyListState()
     val currentChannelFocus = remember { FocusRequester() }
     val categoryFocusRequester = remember { FocusRequester() }
+    val hm = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
     LaunchedEffect(Unit) {
         val i = shown.indexOfFirst { it.id == current?.id }
@@ -175,45 +174,53 @@ fun GuideScreen(vm: MainViewModel) {
                 .padding(12.dp)
                 .onFocusChanged { if (it.hasFocus) categoriesExpanded = false }
         ) {
-            val list = epg[focusedCh?.id].orEmpty().filter { it.stop > now - 2 * 3_600_000L }
-            val chosen = focusedProg ?: EpgLogic.current(epg[focusedCh?.id], now)
+            val progList = remember(focusedCh?.id, now) {
+                val all = epg[focusedCh?.id].orEmpty()
+                val nowMs = now
+                val current = all.firstOrNull { nowMs >= it.start && nowMs < it.stop }
+                val next = all.filter { it.start >= nowMs }.take(2)
+                listOfNotNull(current) + next
+            }
+            val chosen = focusedProg ?: progList.firstOrNull { now >= it.start && now < it.stop }
             Header("${focusedCh?.name ?: ""} · Сегодня")
 
-            // Блок текущих и следующих передач (компактный)
-            LazyColumn(Modifier.weight(0.40f)) {
-                items(list, key = { it.start }) { p ->
+            // Текущая + 2 следующие программы (без прошедших)
+            Column(Modifier.weight(0.25f)) {
+                progList.forEach { p ->
                     val isNow = now >= p.start && now < p.stop
-                    val past = p.stop <= now
-                    FocusRow(selected = isNow, onFocus = { focusedProg = p }) {
+                    FocusRow(
+                        selected = isNow || focusedProg == p,
+                        onFocus = { focusedProg = p }
+                    ) {
                         Text(
                             hm.format(Date(p.start)),
                             color = if (isNow) Accent else Muted,
-                            fontSize = 17.sp,
+                            fontSize = 15.sp,
                             fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.width(64.dp)
+                            modifier = Modifier.width(52.dp)
                         )
                         Text(
                             p.title,
-                            color = if (isNow) Color.White else if (past) Color(0xFF8C97A3) else Color.White,
-                            fontSize = 18.sp,
-                            lineHeight = 22.sp,
+                            color = if (isNow) Color.White else Color(0xFFB0BEC5),
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
                             fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal,
-                            maxLines = 2,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        if (isNow) Text("▶", color = Accent, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp))
+                        if (isNow) Text("▶", color = Accent, fontSize = 15.sp, modifier = Modifier.padding(start = 4.dp))
                     }
                 }
             }
 
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
 
-            // Блок описания (расширен вверх)
+            // Блок описания — занимает основное пространство
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .weight(0.60f)
+                    .weight(0.75f)
                     .padding(top = 10.dp, start = 14.dp, end = 14.dp)
             ) {
                 Text(
@@ -223,7 +230,7 @@ fun GuideScreen(vm: MainViewModel) {
                 Text(
                     chosen?.desc?.ifBlank { null } ?: "Описание передачи отсутствует",
                     color = Color(0xFFE6EDF3), fontSize = 17.sp, lineHeight = 24.sp,
-                    maxLines = 10, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp)
+                    maxLines = 20, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp)
                 )
                 if (chosen != null) Text(
                     "${hm.format(Date(chosen.start))} – ${hm.format(Date(chosen.stop))} · ${(chosen.stop - chosen.start) / 60_000} мин",

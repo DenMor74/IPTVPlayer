@@ -45,6 +45,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val epg = MutableStateFlow<Map<String, List<Programme>>>(emptyMap())
     val epgInfo = MutableStateFlow("Программа: не загружена")
     val playlistInfo = MutableStateFlow("Плейлист: не загружен")
+    val guideGroups = MutableStateFlow<List<String>>(emptyList())
     val screen = MutableStateFlow(Screen.PLAYER)
     val osd = MutableStateFlow(false)
     val osdToken = MutableStateFlow(0)
@@ -99,6 +100,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyChannels(list: List<Channel>, source: String) {
         channels.value = list
+        guideGroups.value = list.map { it.group }.distinct()
         playlistInfo.value = "Плейлист: ${list.size} каналов ($source)"
         val cur = current.value
         if (cur == null) {
