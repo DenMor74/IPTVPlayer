@@ -1,5 +1,6 @@
 package com.iptv.player.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,9 +31,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 val Accent = Color(0xFF00E5FF)          // бирюзовый акцент фокуса пульта
 val GlassBg = Color(0xCC121212)         // тёмное стекло, 80% непрозрачности
@@ -39,14 +47,30 @@ val Muted = Color(0xFFB9C3CF)
 fun Modifier.glass(radius: Dp = 16.dp): Modifier = this.clip(RoundedCornerShape(radius)).background(GlassBg)
 
 @Composable
-fun IptvTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(primary = Accent, background = Color.Black, surface = Color(0xFF121212)),
-        content = content
-    )
+fun IptvTheme(fontSizeScale: String = "medium", content: @Composable () -> Unit) {
+    val scaleFactor = when (fontSizeScale) {
+        "small" -> 0.85f
+        "large" -> 1.18f
+        else -> 1.0f
+    }
+    val currentDensity = LocalDensity.current
+    val customDensity = remember(currentDensity, scaleFactor) {
+        Density(
+            density = currentDensity.density,
+            fontScale = currentDensity.fontScale * scaleFactor
+        )
+    }
+
+    CompositionLocalProvider(LocalDensity provides customDensity) {
+        MaterialTheme(
+            colorScheme = darkColorScheme(primary = Accent, background = Color.Black, surface = Color(0xFF121212)),
+            content = content
+        )
+    }
 }
 
-/** Строка списка с чётким фокусом пульта: бирюзовая рамка и подсветка. */
+/** Строка списка с чётким фокусом пульта: бирюзовая рамка и подсветка; при фокусе прокручивает контейнер к себе. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FocusRow(
     modifier: Modifier = Modifier,
@@ -56,7 +80,9 @@ fun FocusRow(
     content: @Composable RowScope.() -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val biv = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    val shape = RoundedCornerShape(10.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -69,40 +95,52 @@ fun FocusRow(
                 }
             )
             .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocus() }
+            .bringIntoViewRequester(biv)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) { scope.launch { biv.bringIntoView() }; onFocus() }
+            }
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TvButton(text: String, onClick: () -> Unit) {
+fun TvButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val biv = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     val shape = RoundedCornerShape(12.dp)
     Text(
         text = text, color = Color.White, fontSize = 24.sp,
-        modifier = Modifier
+        modifier = modifier
             .clip(shape)
             .background(Color.White.copy(alpha = 0.14f))
             .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .bringIntoViewRequester(biv)
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) scope.launch { biv.bringIntoView() } }
             .clickable(onClick = onClick)
             .padding(horizontal = 28.dp, vertical = 16.dp)
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val biv = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier
             .fillMaxWidth()
             .clip(shape)
             .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .bringIntoViewRequester(biv)
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) scope.launch { biv.bringIntoView() } }
             .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,

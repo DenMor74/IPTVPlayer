@@ -1,5 +1,10 @@
 package com.iptv.player.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +26,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,8 +54,8 @@ import java.util.Locale
 private const val ALL = "Все каналы"
 
 /**
- * Меню каналов и программа передач. Слева стекло на ~68% ширины: категории, каналы, программа.
- * Видео справа продолжает играть. ОК на канале переключает канал, меню остаётся открытым.
+ * Меню каналов и программа передач. Слева категории (выдвижные), далее каналы и программа передач.
+ * При фокусе на каналах/программах категории скрываются влево. Стрелка «Влево» на каналах снова выдвигает категории.
  */
 @Composable
 fun GuideScreen(vm: MainViewModel) {
@@ -56,95 +68,166 @@ fun GuideScreen(vm: MainViewModel) {
     var group by remember { mutableStateOf(current?.group ?: ALL) }
     var focusedCh by remember { mutableStateOf(current) }
     var focusedProg by remember { mutableStateOf<Programme?>(null) }
+    var categoriesExpanded by remember { mutableStateOf(false) }
 
     val groups = remember(channels) { channels.map { it.group }.distinct() }
     val shown = remember(channels, group) { if (group == ALL) channels else channels.filter { it.group == group } }
     val hm = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
     val chList = rememberLazyListState()
-    val currentFocus = remember { FocusRequester() }
+    val currentChannelFocus = remember { FocusRequester() }
+    val categoryFocusRequester = remember { FocusRequester() }
+
     LaunchedEffect(Unit) {
         val i = shown.indexOfFirst { it.id == current?.id }
         if (i >= 0) chList.scrollToItem(i)
         delay(80)
-        runCatching { currentFocus.requestFocus() }
+        runCatching { currentChannelFocus.requestFocus() }
     }
 
-    Row(Modifier.fillMaxHeight().fillMaxWidth(0.68f).padding(40.dp).glass()) {
+    Row(Modifier.fillMaxSize().padding(16.dp).glass()) {
 
-        // ---------- категории ----------
-        LazyColumn(Modifier.weight(0.25f).fillMaxHeight().padding(16.dp)) {
-            item { Header("Категории") }
-            if (ui.terrKind != "none") item {
-                FocusRow(onClick = { vm.launchTerrestrial() }) {
-                    Text("Эфирное ТВ", color = Accent, fontSize = 26.sp, modifier = Modifier.weight(1f))
-                    Text("▶", color = Accent, fontSize = 22.sp)
+        // ---------- 1. категории (выдвижная панель влево) ----------
+        AnimatedVisibility(
+            visible = categoriesExpanded,
+            enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+            exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut()
+        ) {
+            LazyColumn(
+                Modifier
+                    .width(260.dp)
+                    .fillMaxHeight()
+                    .padding(12.dp)
+                    .onFocusChanged { if (it.hasFocus) categoriesExpanded = true }
+            ) {
+                item { Header("Категории") }
+                if (ui.terrKind != "none") item {
+                    FocusRow(onClick = { vm.launchTerrestrial() }) {
+                        Text("📺", fontSize = 20.sp, modifier = Modifier.padding(end = 8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Эфирное ТВ", color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            if (ui.terrLabel.isNotBlank()) {
+                                Text(ui.terrLabel, color = Muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        Text("▶", color = Accent, fontSize = 18.sp)
+                    }
                 }
-            }
-            item { CategoryRow(ALL, channels.size, group == ALL) { group = ALL } }
-            items(groups) { g -> CategoryRow(g, channels.count { it.group == g }, group == g) { group = g } }
-            item {
-                Spacer(Modifier.height(16.dp))
-                FocusRow(onClick = { vm.openSettings() }) { Text("Настройки", color = Color.White, fontSize = 26.sp) }
+                item {
+                    CategoryRow(
+                        ALL, channels.size, group == ALL,
+                        modifier = if (group == ALL) Modifier.focusRequester(categoryFocusRequester) else Modifier
+                    ) { group = ALL }
+                }
+                items(groups) { g ->
+                    CategoryRow(
+                        g, channels.count { it.group == g }, group == g,
+                        modifier = if (g == group) Modifier.focusRequester(categoryFocusRequester) else Modifier
+                    ) { group = g }
+                }
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    FocusRow(onClick = { vm.openSettings() }) { Text("Настройки", color = Color.White, fontSize = 20.sp) }
+                }
             }
         }
 
-        // ---------- каналы ----------
-        LazyColumn(Modifier.weight(0.36f).fillMaxHeight().padding(16.dp), state = chList) {
+        // ---------- 2. каналы ----------
+        LazyColumn(
+            modifier = Modifier
+                .weight(0.40f)
+                .fillMaxHeight()
+                .padding(12.dp)
+                .onFocusChanged { if (it.hasFocus) categoriesExpanded = false }
+                .onPreviewKeyEvent { e ->
+                    if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) {
+                        categoriesExpanded = true
+                        runCatching { categoryFocusRequester.requestFocus() }
+                        true
+                    } else false
+                },
+            state = chList
+        ) {
             item { Header("Каналы") }
             items(shown, key = { it.id }) { ch ->
                 val title = EpgLogic.current(epg[ch.id], now)?.title
                 FocusRow(
-                    modifier = if (ch.id == current?.id) Modifier.focusRequester(currentFocus) else Modifier,
+                    modifier = if (ch.id == current?.id) Modifier.focusRequester(currentChannelFocus) else Modifier,
+                    selected = ch.id == current?.id,
                     onFocus = { focusedCh = ch; focusedProg = null },
-                    onClick = { vm.playChannel(ch) }
+                    onClick = { vm.playChannel(ch); vm.closeOverlay() }
                 ) {
-                    Text("${ch.number}", color = Muted, fontSize = 22.sp, modifier = Modifier.width(56.dp))
+                    Text("${ch.number}", color = Muted, fontSize = 17.sp, modifier = Modifier.width(44.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(ch.name, color = Color.White, fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (title != null) Text(title, color = Muted, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(ch.name, color = Color.White, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (title != null) Text(title, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    if (ch.id == current?.id) Text("▶", color = Accent, fontSize = 22.sp)
+                    if (ch.id == current?.id) Text("▶", color = Accent, fontSize = 18.sp)
                 }
             }
         }
 
-        // ---------- программа и описание ----------
-        Column(Modifier.weight(0.39f).fillMaxHeight().padding(16.dp)) {
+        // ---------- 3. программа и описание ----------
+        Column(
+            Modifier
+                .weight(0.60f)
+                .fillMaxHeight()
+                .padding(12.dp)
+                .onFocusChanged { if (it.hasFocus) categoriesExpanded = false }
+        ) {
             val list = epg[focusedCh?.id].orEmpty().filter { it.stop > now - 2 * 3_600_000L }
             val chosen = focusedProg ?: EpgLogic.current(epg[focusedCh?.id], now)
             Header("${focusedCh?.name ?: ""} · Сегодня")
-            LazyColumn(Modifier.weight(1f)) {
+
+            // Блок текущих и следующих передач (компактный)
+            LazyColumn(Modifier.weight(0.40f)) {
                 items(list, key = { it.start }) { p ->
                     val isNow = now >= p.start && now < p.stop
                     val past = p.stop <= now
                     FocusRow(selected = isNow, onFocus = { focusedProg = p }) {
                         Text(
                             hm.format(Date(p.start)),
-                            color = if (isNow) Accent else Muted, fontSize = 22.sp, modifier = Modifier.width(84.dp)
+                            color = if (isNow) Accent else Muted,
+                            fontSize = 17.sp,
+                            fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.width(64.dp)
                         )
                         Text(
-                            p.title, color = if (past) Color(0xFF8C97A3) else Color.White,
-                            fontSize = 24.sp, fontWeight = if (isNow) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis
+                            p.title,
+                            color = if (isNow) Color.White else if (past) Color(0xFF8C97A3) else Color.White,
+                            fontSize = 18.sp,
+                            lineHeight = 22.sp,
+                            fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+                        if (isNow) Text("▶", color = Accent, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp))
                     }
                 }
             }
+
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
-            Column(Modifier.fillMaxWidth().height(230.dp).padding(top = 14.dp, start = 18.dp, end = 18.dp)) {
+
+            // Блок описания (расширен вверх)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(0.60f)
+                    .padding(top = 10.dp, start = 14.dp, end = 14.dp)
+            ) {
                 Text(
-                    chosen?.let { "Описание · ${it.title}" } ?: "Описание", color = Muted, fontSize = 18.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    chosen?.let { "Описание · ${it.title}" } ?: "Описание",
+                    color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     chosen?.desc?.ifBlank { null } ?: "Описание передачи отсутствует",
-                    color = Color(0xFFE6EDF3), fontSize = 22.sp, lineHeight = 30.sp,
-                    maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp)
+                    color = Color(0xFFE6EDF3), fontSize = 17.sp, lineHeight = 24.sp,
+                    maxLines = 10, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp)
                 )
                 if (chosen != null) Text(
                     "${hm.format(Date(chosen.start))} – ${hm.format(Date(chosen.stop))} · ${(chosen.stop - chosen.start) / 60_000} мин",
-                    color = Muted, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)
+                    color = Accent, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp)
                 )
             }
         }
@@ -154,15 +237,19 @@ fun GuideScreen(vm: MainViewModel) {
 @Composable
 private fun Header(text: String) {
     Text(
-        text.uppercase(), color = Muted, fontSize = 18.sp, letterSpacing = 1.sp,
-        modifier = Modifier.padding(start = 18.dp, bottom = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis
+        text.uppercase(), color = Muted, fontSize = 15.sp, letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 14.dp, bottom = 10.dp), maxLines = 1, overflow = TextOverflow.Ellipsis
     )
 }
 
 @Composable
-private fun CategoryRow(name: String, count: Int, selected: Boolean, onFocus: () -> Unit) {
-    FocusRow(selected = selected, onFocus = onFocus) {
-        Text(name, color = Color.White, fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Text("$count", color = Muted, fontSize = 20.sp)
+private fun CategoryRow(
+    name: String, count: Int, selected: Boolean,
+    modifier: Modifier = Modifier,
+    onFocus: () -> Unit
+) {
+    FocusRow(modifier = modifier, selected = selected, onFocus = onFocus) {
+        Text(name, color = Color.White, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text("$count", color = Muted, fontSize = 16.sp)
     }
 }

@@ -29,13 +29,15 @@ enum class Screen { PLAYER, GUIDE, SETTINGS }
 
 data class UiSettings(
     val ha: String, val clock: Boolean, val debug: Boolean,
-    val terrKind: String, val terrId: String, val terrLabel: String
+    val terrKind: String, val terrId: String, val terrLabel: String,
+    val pcm: Boolean, val fontSize: String,
+    val clockOverlay: Boolean, val clockPosition: String
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = AppSettings(app)
     private val repo = Repository(app)
-    val controller = PlayerController(app)
+    val controller = PlayerController(app, settings.pcmAudioOnly)
 
     val channels = MutableStateFlow<List<Channel>>(emptyList())
     val current = MutableStateFlow<Channel?>(null)
@@ -57,7 +59,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun readUi() = UiSettings(
         settings.haAddress, settings.showClock, settings.debugOverlay,
-        settings.terrKind, settings.terrId, settings.terrLabel
+        settings.terrKind, settings.terrId, settings.terrLabel, settings.pcmAudioOnly,
+        settings.fontSize, settings.clockOverlay, settings.clockPosition
     )
 
     init {
@@ -238,7 +241,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ui.value = readUi()
     }
     fun setClock(v: Boolean) { settings.showClock = v; ui.value = readUi() }
+    fun setClockOverlay(v: Boolean) { settings.clockOverlay = v; ui.value = readUi() }
+    fun setClockPosition(pos: String) { settings.clockPosition = pos; ui.value = readUi() }
+    fun setPcm(v: Boolean) {
+        settings.pcmAudioOnly = v; ui.value = readUi()
+        showToast("Режим звука изменится после перезапуска приложения")
+    }
     fun setDebug(v: Boolean) { settings.debugOverlay = v; ui.value = readUi() }
+    fun setFontSize(v: String) { settings.fontSize = v; ui.value = readUi() }
     fun setTerrestrial(kind: String, id: String, label: String) {
         settings.terrKind = kind; settings.terrId = id; settings.terrLabel = label
         ui.value = readUi()

@@ -104,8 +104,7 @@ fun PlayerOverlay(vm: MainViewModel) {
     Box(
         Modifier
             .fillMaxSize()
-            .focusRequester(focus)
-            .focusable()
+            .then(if (screen == Screen.PLAYER) Modifier.focusRequester(focus).focusable() else Modifier)
             .onPreviewKeyEvent { e ->
                 if (screen != Screen.PLAYER || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.key) {
@@ -118,19 +117,45 @@ fun PlayerOverlay(vm: MainViewModel) {
                 true
             }
     ) {
+        if (ui.clockOverlay && screen == Screen.PLAYER) {
+            PermanentClockOverlay(now = now, position = ui.clockPosition)
+        }
+
         AnimatedVisibility(
             visible = osd && screen == Screen.PLAYER,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut()
         ) {
-            OsdPanel(ch, epg, now, ui.clock)
+            OsdPanel(ch, epg, now)
         }
     }
 }
 
 @Composable
-private fun OsdPanel(ch: Channel?, epg: Map<String, List<Programme>>, now: Long, showClock: Boolean) {
+private fun PermanentClockOverlay(now: Long, position: String) {
+    val hm = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val alignment = if (position == "bottom_right") Alignment.BottomEnd else Alignment.TopEnd
+    Box(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp, vertical = 28.dp),
+        contentAlignment = alignment
+    ) {
+        Text(
+            text = hm.format(Date(now)),
+            color = Color.White,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .glass(10.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun OsdPanel(ch: Channel?, epg: Map<String, List<Programme>>, now: Long) {
     val list = epg[ch?.id]
     val cur = EpgLogic.current(list, now)
     val nxt = list?.firstOrNull { it.start >= (cur?.stop ?: now) }
@@ -159,11 +184,9 @@ private fun OsdPanel(ch: Channel?, epg: Map<String, List<Programme>>, now: Long,
                 Text(ch?.name ?: "", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(cur?.title ?: "Нет данных о программе", color = Color.White, fontSize = 28.sp, maxLines = 1)
             }
-            if (showClock) {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(hm.format(Date(now)), color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.SemiBold)
-                    Text(date.format(Date(now)), color = Muted, fontSize = 20.sp)
-                }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(hm.format(Date(now)), color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.SemiBold)
+                Text(date.format(Date(now)), color = Muted, fontSize = 20.sp)
             }
         }
         Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color.White.copy(alpha = 0.22f))) {
@@ -187,12 +210,20 @@ fun DebugOverlay(c: PlayerController) {
     val d = c.debug
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
         Column(
-            Modifier.padding(24.dp).glass(12.dp).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier
+                .padding(bottom = 0.dp, end = 24.dp)
+                .glass(8.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 d.segs.toList().forEach { s ->
-                    Box(Modifier.size(22.dp, 14.dp).clip(RoundedCornerShape(3.dp)).background(segColor(s, d.playingKey)))
+                    Box(
+                        Modifier
+                            .size(24.dp, 14.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(segColor(s, d.playingKey))
+                    )
                 }
             }
             Text(d.stat, color = Color.White, fontSize = 14.sp)

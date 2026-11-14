@@ -17,8 +17,12 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
@@ -47,7 +51,7 @@ class DebugState {
  * плеер берёт первые же байты. Канал переключается заменой MediaItem (без пересоздания плеера).
  */
 @OptIn(UnstableApi::class)
-class PlayerController(private val ctx: Context) {
+class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
     val debug = DebugState()
     private val main = Handler(Looper.getMainLooper())
     private var retries = 0
@@ -60,7 +64,21 @@ class PlayerController(private val ctx: Context) {
         .setReadTimeoutMs(6000)
         .setAllowCrossProtocolRedirects(true)
 
-    val player: ExoPlayer = ExoPlayer.Builder(ctx)
+    /**
+     * pcmOnly = true отключает «сквозную» передачу AC3/E-AC3/DTS на ТВ: звук декодируется в PCM,
+     * и системная громкость работает на любом канале. При передаче как есть громкость не меняется.
+     */
+    private val renderers = object : DefaultRenderersFactory(ctx) {
+        override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink? {
+            val b = DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            if (pcmOnly) b.setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+            return b.build()
+        }
+    }.apply { setEnableDecoderFallback(true) }
+
+    val player: ExoPlayer = ExoPlayer.Builder(ctx, renderers)
         .setLoadControl(
             DefaultLoadControl.Builder()
                 // min, max, старт воспроизведения, старт после остановки буфера (мс)
@@ -152,16 +170,50 @@ class PlayerController(private val ctx: Context) {
             val w = tl.getWindow(p.currentMediaItemIndex, Timeline.Window())
             periodPos = p.currentPosition + w.positionInFirstPeriodMs
         }
-        debug.playingKey = debug.segs.firstOrNull { it.startMs <= periodPos && periodPos < it.endMs }?.key ?: -1L
-        val ahead = (p.bufferedPosition - p.currentPosition).coerceAtLeast(0) / 1000.0
+
+        // Удаляем сыгранные сегменты (окончание которых раньше текущей позиции)
+        if (periodPos > 0) {
+            debug.segs.removeAll { it.endMs > 0 && it.endMs <= periodPos }
+        }
+
+        // Сортируем сегменты по времени начала
+        val sorted = debug.segs.sortedBy { it.startMs }
+        if (sorted != debug.segs.toList()) {
+            debug.segs.clear()
+            debug.segs.addAll(sorted)
+        }
+
+        // Синий текущий играющий сегмент — самый первый (слева)
+        val playingSeg = debug.segs.firstOrNull {
+            (it.startMs <= periodPos && periodPos < it.endMs) || it.startMs == -1L
+        } ?: debug.segs.firstOrNull()
+
+        debug.playingKey = playingSeg?.key ?: -1L
+
+        // Запас буфера в секундах по скачанным сегментам в памяти
+        val loadedSegs = debug.segs.filter { it.state == SegState.LOADED }
+        val maxEndMs = loadedSegs.maxOfOrNull { it.endMs } ?: 0L
+        val segBufferSec = if (periodPos > 0 && maxEndMs > periodPos) {
+            (maxEndMs - periodPos) / 1000.0
+        } else {
+            (p.bufferedPosition - p.currentPosition).coerceAtLeast(0) / 1000.0
+        }
+
         val live = p.currentLiveOffset
         val last = debug.segs.lastOrNull { it.state == SegState.LOADED }
         val mbit = DefaultBandwidthMeter.getSingletonInstance(ctx).bitrateEstimate / 1_000_000
+        val vf = p.videoFormat
+
         debug.stat = buildString {
-            append("буфер %.1f с".format(ahead))
+            append("буфер %.1f с".format(segBufferSec))
             if (live != C.TIME_UNSET) append(" · от эфира %.1f с".format(live / 1000.0))
-            if (last != null) append(" · сегм. %.1f МБ за %.2f с".format(last.bytes / 1048576.0, last.loadMs / 1000.0))
-            append(" · %d Мбит/с".format(mbit))
+            if (vf != null && vf.width > 0 && vf.height > 0) {
+                append(" · %dx%d".format(vf.width, vf.height))
+                if (vf.frameRate > 0 && vf.frameRate <= 120) append("@%d".format(vf.frameRate.toInt()))
+            }
+            if (last != null && last.bytes > 0) append(" · %.1f МБ".format(last.bytes / 1048576.0))
+            if (mbit > 0) append(" · %d Мбит/с".format(mbit))
+            p.audioFormat?.let { append(" · звук ${it.sampleMimeType?.substringAfter('/') ?: "?"} ${it.channelCount}к") }
         }
     }
 

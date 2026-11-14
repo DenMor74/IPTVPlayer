@@ -1,14 +1,19 @@
 package com.iptv.player
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iptv.player.ui.DebugOverlay
 import com.iptv.player.ui.GuideScreen
@@ -19,57 +24,35 @@ import com.iptv.player.ui.ToastBar
 import com.iptv.player.ui.VideoSurface
 
 class MainActivity : ComponentActivity() {
-
-    private val viewModel: MainViewModel by viewModels()
+    private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
-            IptvTheme {
-                MainContent(viewModel = viewModel)
-            }
+            val ui by vm.ui.collectAsStateWithLifecycle()
+            IptvTheme(fontSizeScale = ui.fontSize) { App(vm) }
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        viewModel.onForeground()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        viewModel.onBackground()
-    }
-
-    @Deprecated("Deprecated in Java")
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        viewModel.onBack {
-            super.onBackPressed()
-        }
-    }
+    override fun onStart() { super.onStart(); vm.onForeground() }
+    override fun onStop() { super.onStop(); vm.onBackground() }
 }
 
 @Composable
-private fun MainContent(viewModel: MainViewModel) {
-    val screen by viewModel.screen.collectAsStateWithLifecycle()
-    val ui by viewModel.ui.collectAsStateWithLifecycle()
+private fun App(vm: MainViewModel) {
+    val activity = LocalContext.current as ComponentActivity
+    val screen by vm.screen.collectAsStateWithLifecycle()
+    val ui by vm.ui.collectAsStateWithLifecycle()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        VideoSurface(exo = viewModel.controller.player)
-        PlayerOverlay(vm = viewModel)
+    BackHandler { vm.onBack { activity.finish() } }
 
-        if (ui.debug) {
-            DebugOverlay(c = viewModel.controller)
-        }
-
-        when (screen) {
-            Screen.PLAYER -> { }
-            Screen.GUIDE -> GuideScreen(vm = viewModel)
-            Screen.SETTINGS -> SettingsScreen(vm = viewModel)
-        }
-
-        ToastBar(vm = viewModel)
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        VideoSurface(vm.controller.player)                 // видео всегда на фоне
+        PlayerOverlay(vm)                                  // OSD и обработка пульта
+        if (screen == Screen.GUIDE) GuideScreen(vm)
+        if (screen == Screen.SETTINGS) SettingsScreen(vm)
+        if (ui.debug) DebugOverlay(vm.controller)
+        ToastBar(vm)
     }
 }
