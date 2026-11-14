@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.iptv.player.data.Channel
 import com.iptv.player.data.Endpoints
 import com.iptv.player.data.EpgLogic
+import com.iptv.player.data.LoadResult
 import com.iptv.player.data.Programme
 import com.iptv.player.data.Repository
 import com.iptv.player.player.PlayerController
@@ -78,13 +79,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             applyChannels(cached, "кэш")
             startEpg(fromCache = true)                 // программа грузится параллельно со свежим плейлистом
         }
-        val fresh = withContext(Dispatchers.IO) { repo.fetchPlaylist(base()) }
-        if (fresh != null) {
-            val changed = cached == null || fresh.map { it.id } != cached.map { it.id }
-            applyChannels(fresh, "обновлён")
-            if (changed) startEpg(fromCache = cached == null)
-        } else if (cached == null) {
-            showToast("Нет связи с Home Assistant. Проверьте адрес в настройках")
+        when (val res = withContext(Dispatchers.IO) { repo.fetchPlaylist(base()) }) {
+            is LoadResult.Success -> {
+                val fresh = res.data
+                val changed = cached == null || fresh.map { it.id } != cached.map { it.id }
+                applyChannels(fresh, "обновлён")
+                if (changed) startEpg(fromCache = cached == null)
+            }
+            is LoadResult.Error -> {
+                if (cached == null) {
+                    showToast(res.message)
+                } else {
+                    showToast("Не удалось обновить плейлист: ${res.message}")
+                }
+            }
         }
         lastHourKey = hourKey()
     }
@@ -127,16 +135,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val t = System.currentTimeMillis()
         val todayJob = async { repo.fetchEpg(b, "epg_today.xml", chs, t) }
         var actual = false
-        val hourly = repo.fetchEpg(b, "epg_hourly.xml", chs, t)
-        if (hourly != null && EpgLogic.isActual(hourly, t)) { publish(hourly, "hourly", overwrite = true); actual = true }
-        val today = todayJob.await()
-        if (today != null && EpgLogic.isActual(today, t)) {
-            publish(today, if (actual) "hourly + today" else "today", overwrite = !actual)
-            actual = true
+        val hourlyRes = repo.fetchEpg(b, "epg_hourly.xml", chs, t)
+        if (hourlyRes is LoadResult.Success) {
+            val hourly = hourlyRes.data
+            if (EpgLogic.isActual(hourly, t)) { publish(hourly, "hourly", overwrite = true); actual = true }
+        } else if (hourlyRes is LoadResult.Error && chs.isNotEmpty() && epg.value.isEmpty()) {
+            showToast(hourlyRes.message)
+        }
+        val todayRes = todayJob.await()
+        if (todayRes is LoadResult.Success) {
+            val today = todayRes.data
+            if (EpgLogic.isActual(today, t)) {
+                publish(today, if (actual) "hourly + today" else "today", overwrite = !actual)
+                actual = true
+            }
         }
         if (!actual) {
-            val week = repo.fetchEpg(b, "epg.xml", chs, t)
-            if (week != null) { publish(week, "week", overwrite = true); actual = true }
+            val weekRes = repo.fetchEpg(b, "epg.xml", chs, t)
+            if (weekRes is LoadResult.Success) {
+                val week = weekRes.data
+                publish(week, "week", overwrite = true)
+                actual = true
+            } else if (weekRes is LoadResult.Error && epg.value.isEmpty()) {
+                showToast(weekRes.message)
+            }
         }
         if (!actual && epg.value.isEmpty()) epgInfo.value = "Программа: нет актуальных данных"
     }
@@ -168,14 +190,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun refreshHourly() {
         val chs = channels.value
         val t = System.currentTimeMillis()
-        val h = repo.fetchEpg(base(), "epg_hourly.xml", chs, t)
-        if (h != null && EpgLogic.isActual(h, t)) publish(h, "hourly", overwrite = true) else refreshEpg()
+        when (val res = repo.fetchEpg(base(), "epg_hourly.xml", chs, t)) {
+            is LoadResult.Success -> {
+                val h = res.data
+                if (EpgLogic.isActual(h, t)) publish(h, "hourly", overwrite = true) else refreshEpg()
+            }
+            is LoadResult.Error -> {
+                showToast(res.message)
+                refreshEpg()
+            }
+        }
     }
 
     fun refreshAll() {
         viewModelScope.launch {
-            val fresh = withContext(Dispatchers.IO) { repo.fetchPlaylist(base()) }
-            if (fresh != null) applyChannels(fresh, "обновлён") else showToast("Плейлист не загрузился")
+            when (val res = withContext(Dispatchers.IO) { repo.fetchPlaylist(base()) }) {
+                is LoadResult.Success -> applyChannels(res.data, "обновлён")
+                is LoadResult.Error -> showToast(res.message)
+            }
             startEpg(fromCache = false)
         }
     }

@@ -26,6 +26,9 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
+import androidx.media3.exoplayer.source.TrackGroupArray
+import androidx.media3.exoplayer.trackselection.ExoTrackSelection
+import androidx.media3.exoplayer.upstream.Allocator
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import com.iptv.player.data.Channel
@@ -47,14 +50,19 @@ class DebugState {
 }
 
 /**
- * Единственный ExoPlayer на всё приложение. Свой буфер минимален: прокси сам держит запас,
- * плеер берёт первые же байты. Канал переключается заменой MediaItem (без пересоздания плеера).
+ * Единственный ExoPlayer на всё приложение.
+ * Канал переключается заменой MediaItem (без пересоздания плеера).
  */
 @OptIn(UnstableApi::class)
 class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
     val debug = DebugState()
     private val main = Handler(Looper.getMainLooper())
     private var retries = 0
+    private val loadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(15000, 45000, 150, 500)
+        .setPrioritizeTimeOverSizeThresholds(true)
+        .setBackBuffer(0, false)
+        .build()
     var current: Channel? = null
         private set
 
@@ -79,16 +87,9 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
     }.apply { setEnableDecoderFallback(true) }
 
     val player: ExoPlayer = ExoPlayer.Builder(ctx, renderers)
-        .setLoadControl(
-            DefaultLoadControl.Builder()
-                // min, max, старт воспроизведения, старт после остановки буфера (мс)
-                .setBufferDurationsMs(1000, 3000, 100, 500)
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .setBackBuffer(0, false)
-                .build()
-        )
+        .setLoadControl(loadControl)
         .setMediaSourceFactory(
-            DefaultMediaSourceFactory(http).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(2))
+            DefaultMediaSourceFactory(http).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy())
         )
         .build()
         .apply { playWhenReady = true }
@@ -125,7 +126,7 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
 
     private fun add(b: SegBox) {
         debug.segs.add(b)
-        while (debug.segs.size > 14) debug.segs.removeAt(0)
+        while (debug.segs.size > 30) debug.segs.removeAt(0)
     }
 
     private fun replace(b: SegBox) {
@@ -137,6 +138,7 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
         current = ch
         retries = 0
         debug.segs.clear()
+
         val item = MediaItem.Builder()
             .setUri(ch.url)
             .setMimeType(MimeTypes.APPLICATION_M3U8)       // без «обнюхивания» формата

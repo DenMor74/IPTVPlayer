@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iptv.player.ui.DebugOverlay
 import com.iptv.player.ui.GuideScreen
@@ -24,7 +25,9 @@ import com.iptv.player.ui.ToastBar
 import com.iptv.player.ui.VideoSurface
 
 class MainActivity : ComponentActivity() {
-    private val vm: MainViewModel by viewModels()
+    private val vm: MainViewModel by viewModels {
+        AndroidViewModelFactory.getInstance(application)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
