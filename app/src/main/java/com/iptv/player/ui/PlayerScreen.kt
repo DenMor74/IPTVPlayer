@@ -36,6 +36,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -210,9 +211,9 @@ fun DebugOverlay(c: PlayerController) {
         Row(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 2.dp, end = 8.dp)
+                .padding(bottom = 0.dp, end = 8.dp)
                 .glass(6.dp)
-                .padding(horizontal = 5.dp, vertical = 4.dp),
+                .padding(horizontal = 5.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -226,7 +227,7 @@ fun DebugOverlay(c: PlayerController) {
                     )
                 }
             }
-            Text(d.stat, color = Color.White, fontSize = 9.sp)
+            Text(d.stat, color = Color.White, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -15,10 +15,12 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioCapabilities
@@ -70,6 +72,9 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
 
     val error = MutableStateFlow<String?>(null)
 
+    /** Аудиодорожка выключена из-за неподдерживаемого кодека (видео идёт без звука). */
+    private var audioDisabled = false
+
     private val http = DefaultHttpDataSource.Factory()
         .setUserAgent(Endpoints.USER_AGENT)          // прокси узнаёт плеер по User-Agent
         .setConnectTimeoutMs(3000)
@@ -88,7 +93,12 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
             if (pcmOnly) b.setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
             return b.build()
         }
-    }.apply { setEnableDecoderFallback(true) }
+    }.apply {
+        setEnableDecoderFallback(true)
+        // Подхватываем программные рендереры-расширения (сборка ffmpeg с AC3/E-AC3/DTS),
+        // если они добавлены в приложение; без них реализация не меняется.
+        setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+    }
 
     val player: ExoPlayer = ExoPlayer.Builder(ctx, renderers)
         .setLoadControl(loadControl)
@@ -104,6 +114,21 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
                 if (state == Player.STATE_READY) retries = 0
             }
             override fun onPlayerError(ex: PlaybackException) {
+                // Ошибка рендерера на аудиодорожке (нет декодера/не читается формат) -
+                // выключаем звук для этого канала и играем видео дальше, вместо цикла перезапусков.
+                val audioError = ex is ExoPlaybackException &&
+                    ex.type == ExoPlaybackException.TYPE_RENDERER &&
+                    ex.rendererFormat?.sampleMimeType?.startsWith("audio/") == true
+                if (audioError && !audioDisabled) {
+                    audioDisabled = true
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                        .build()
+                    error.value = "Формат звука не поддерживается устройством — видео без звука"
+                    main.postDelayed({ player.stop(); player.prepare() }, 500)
+                    return
+                }
+
                 // закрываем соединение и заново запрашиваем, показываем сообщение
                 val msg = when {
                     ex.message?.contains("timeout", ignoreCase = true) == true -> "Таймаут подключения, перезапуск..."
@@ -152,6 +177,13 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
         current = ch
         retries = 0
         debug.segs.clear()
+
+        // Новый канал - звук снова разрешён; если кодек опять не поддерживается,
+        // onPlayerError выключит его для этого канала ещё раз.
+        audioDisabled = false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+            .build()
 
         val item = MediaItem.Builder()
             .setUri(ch.url)
@@ -223,13 +255,30 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
         debug.stat = buildString {
             append("буфер %.1f с".format(segBufferSec))
             if (live != C.TIME_UNSET) append(" · от эфира %.1f с".format(live / 1000.0))
+            // Все аудиодорожки потока и их статус поддержки: диагностика «канал без звука»
+            val audioTracks = p.currentTracks.groups
+                .filter { it.type == C.TRACK_TYPE_AUDIO }
+                .joinToString("/") { g ->
+                    val why = when (g.getTrackSupport(0)) {
+                        C.FORMAT_HANDLED -> "ок"
+                        C.FORMAT_EXCEEDS_CAPABILITIES -> "нет декодера"
+                        C.FORMAT_UNSUPPORTED_SUBTYPE -> "тип не заявлен"
+                        C.FORMAT_UNSUPPORTED_TYPE -> "тип не поддержан"
+                        C.FORMAT_UNSUPPORTED_DRM -> "drm"
+                        else -> "?"
+                    }
+                    "${g.getTrackFormat(0).sampleMimeType?.substringAfter('/') ?: "?"}($why)" +
+                        if (!g.isTrackSelected(0)) "!" else ""
+                }
+            if (audioTracks.isNotEmpty()) append(" · аудио:$audioTracks")
             if (vf != null && vf.width > 0 && vf.height > 0) {
                 append(" · %dx%d".format(vf.width, vf.height))
                 if (vf.frameRate > 0 && vf.frameRate <= 120) append("@%d".format(vf.frameRate.toInt()))
             }
             if (last != null && last.bytes > 0) append(" · %.1f МБ".format(last.bytes / 1048576.0))
             if (mbit > 0) append(" · %d Мбит/с".format(mbit))
-            p.audioFormat?.let { append(" · звук ${it.sampleMimeType?.substringAfter('/') ?: "?"} ${it.channelCount}к") }
+            if (audioDisabled) append(" · звук выкл (декодер)")
+            else p.audioFormat?.let { append(" · звук ${it.sampleMimeType?.substringAfter('/') ?: "?"} ${it.channelCount}к") }
         }
     }
 

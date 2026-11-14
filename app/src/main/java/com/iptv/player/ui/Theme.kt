@@ -20,6 +20,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +32,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -75,6 +75,7 @@ fun IptvTheme(fontSizeScale: String = "medium", content: @Composable () -> Unit)
 fun FocusRow(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    enabled: Boolean = true,
     onFocus: () -> Unit = {},
     onClick: () -> Unit = {},
     content: @Composable RowScope.() -> Unit
@@ -100,11 +101,15 @@ fun FocusRow(
                 focused = it.isFocused
                 if (it.isFocused) { scope.launch { biv.bringIntoView() }; onFocus() }
             }
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content
-    )
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Передаем состояние фокуса в контекст для дочерних элементов
+        CompositionLocalProvider(LocalFocusRowFocused provides focused) {
+            content()
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
