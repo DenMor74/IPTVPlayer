@@ -180,8 +180,11 @@ private fun OsdPanel(ch: Channel?, epg: Map<String, List<Programme>>, now: Long)
             }
             Column(Modifier.weight(1f)) {
                 Text("${ch?.number ?: ""} · ${ch?.group ?: ""}", color = Muted, fontSize = 22.sp)
-                Text(ch?.name ?: "", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(cur?.title ?: "Нет данных о программе", color = Color.White, fontSize = 28.sp, maxLines = 1)
+                Text(ch?.name ?: "", color = Muted, fontSize = 24.sp, maxLines = 1)
+                Text(
+                    cur?.title ?: "Нет данных о программе",
+                    color = Accent, fontSize = 34.sp, fontWeight = FontWeight.Bold, maxLines = 1
+                )
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(hm.format(Date(now)), color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.SemiBold)

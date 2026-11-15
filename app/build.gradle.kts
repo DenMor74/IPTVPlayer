@@ -5,17 +5,24 @@ plugins {
 
 android {
     namespace = "com.iptv.player"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.iptv.player"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "2.2.7"
+        versionName = "2.4.0"
     }
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            // R8: минификация и удаление неиспользуемых ресурсов - заметно плавнее на ТВ-боксах и меньше APK
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Личная сборка: подписываем debug-ключом, чтобы APK ставился без настройки подписи
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -33,9 +40,9 @@ androidComponents {
 }
 
 tasks.register("copyApkToShare") {
-    dependsOn("assembleDebug")
+    dependsOn("assembleRelease")
     doLast {
-        val apkDir = file("build/outputs/apk/debug")
+        val apkDir = file("build/outputs/apk/release")
         val apkFile = apkDir.listFiles().filter { it.name.endsWith(".apk") }.maxByOrNull { it.lastModified() }
         if (apkFile != null) {
             val sharePath = "\\\\ha\\SHARE\\_TV\\"
@@ -64,7 +71,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     // Media3: ExoPlayer + HLS + PlayerView
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
+
+    // FFmpeg-расширение: программные аудиодекодеры AC3/E-AC3/DTS/TrueHD (lib-decoder-ffmpeg от MediaDroid),
+    // подхватывается DefaultRenderersFactory через EXTENSION_RENDERER_MODE_PREFER
+    implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
 }

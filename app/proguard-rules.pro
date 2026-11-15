@@ -1,21 +1,17 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# IPTVPlayer
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Media3 поставляет consumer-правила через свои зависимости; ffmpeg-AAR содержит свои keep-правила
+# (нативные методы и классы, находит JNI). Сверх них нужен конструктор FfmpegAudioRenderer:
+# DefaultRenderersFactory создаёт его рефлексивно по имени класса, R8 без явного keep вырезает конструктор.
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keep class androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer {
+    <init>(int, android.os.Handler, androidx.media3.exoplayer.audio.AudioRendererEventListener, androidx.media3.exoplayer.audio.AudioSink);
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# На случай включения программного видео-рендерера (ExperimentalFfmpegVideoRenderer) — тоже рефлексия невозможна
+# напрямую (используется только MediaDroid'ом), но класс не должен выпасть из AAR при shrink:
+-keep class androidx.media3.decoder.ffmpeg.** { *; }
+-keep class com.hawkynt.mediadroid.ffmpeg.** { *; }
+
+# Имена линий трассировки при падениях
+-keepattributes SourceFile,LineNumberTable

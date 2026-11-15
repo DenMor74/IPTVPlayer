@@ -73,28 +73,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun base() = Endpoints.normalizeBase(settings.haAddress)
 
-    // ---------- запуск: сначала кэш (мгновенно), затем свежие данные ----------
+    // ---------- запуск: мгновенный старт видео из кэша; плейлист и EPG - потом, в фоне ----------
     private suspend fun startup() {
         val cached = withContext(Dispatchers.IO) { repo.cachedPlaylist() }
-        if (cached != null) {
-            applyChannels(cached, "кэш")
-            startEpg(fromCache = true)                 // программа грузится параллельно со свежим плейлистом
-        }
-        when (val res = withContext(Dispatchers.IO) { repo.fetchPlaylist(base()) }) {
-            is LoadResult.Success -> {
-                val fresh = res.data
-                val changed = cached == null || fresh.map { it.id } != cached.map { it.id }
-                applyChannels(fresh, "обновлён")
-                if (changed) startEpg(fromCache = cached == null)
-            }
-            is LoadResult.Error -> {
-                if (cached == null) {
-                    showToast(res.message)
-                } else {
-                    showToast("Не удалось обновить плейлист: ${res.message}")
+        if (cached != null) applyChannels(cached, "кэш")   // воспроизведение стартует сразу
+
+        // Свежий плейлист качаем параллельно - он не задерживает старт видео
+        val playlistJob = viewModelScope.launch {
+            when (val res = withContext(Dispatchers.IO) { repo.fetchPlaylist(base()) }) {
+                is LoadResult.Success -> {
+                    val fresh = res.data
+                    val changed = cached == null || fresh.map { it.id } != cached.map { it.id }
+                    applyChannels(fresh, "обновлён")
+                    if (changed && cached != null) showToast("Плейлист обновлён")
+                }
+                is LoadResult.Error -> {
+                    if (cached == null) showToast(res.message)
+                    else showToast("Не удалось обновить плейлист: ${res.message}")
                 }
             }
         }
+
+        // EPG - строго после того, как видео уже поехало: сначала кэш, затем сеть, всё в фоне
+        playlistJob.join()
+        startEpg(fromCache = true)
         lastHourKey = hourKey()
     }
 

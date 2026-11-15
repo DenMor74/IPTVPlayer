@@ -96,7 +96,7 @@ fun GuideScreen(vm: MainViewModel) {
     Row(
         Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(8.dp)
             .glass()
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) {
@@ -131,8 +131,8 @@ fun GuideScreen(vm: MainViewModel) {
             }
     ) {
 
-        // ---------- 1. категории и настройки (сворачиваются, когда фокус уходит вправо) ----------
-        LazyColumn(
+        // ---------- 1. категории и настройки (сворачиваются, когда фокус уходит вправо; в нуле ширины не композируются) ----------
+        if (pane == Pane.Categories || catWidth > 0.dp) LazyColumn(
             Modifier
                 .width(catWidth)
                 .fillMaxHeight()
@@ -179,9 +179,9 @@ fun GuideScreen(vm: MainViewModel) {
         // ---------- 2. каналы ----------
         LazyColumn(
             modifier = Modifier
-                .weight(0.55f)
+                .weight(0.70f)
                 .fillMaxHeight()
-                .padding(12.dp),
+                .padding(2.dp),
             state = chList
         ) {
             item { Header("Каналы") }
@@ -206,18 +206,23 @@ fun GuideScreen(vm: MainViewModel) {
                                 title,
                                 color = Accent, fontSize = 20.sp, lineHeight = 22.sp,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .drawBehind {
-                                        // Полупрозрачная дорожка времени позади названия:
-                                        // трек на всю ширину ячейки + заполнение на прошедшую часть передачи
-                                        drawRect(Color.White.copy(alpha = 0.08f))
-                                        if (fraction != null && fraction > 0f) {
-                                            drawRect(Accent.copy(alpha = 0.25f), size = Size(size.width * fraction, size.height))
-                                        }
-                                    }
-                                    .autoScrollingText()
+                                modifier = Modifier.autoScrollingText()
                             )
+                            if (fraction != null) {
+                                // Компактная полоска прогресса передачи прямо под названием (рисование в draw-фазе, без вложенных узлов)
+                                Box(
+                                    Modifier
+                                        .padding(top = 1.dp)
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .drawBehind {
+                                            drawRect(Color.White.copy(alpha = 0.15f))
+                                            if (fraction > 0f) {
+                                                drawRect(Accent, size = Size(size.width * fraction, size.height))
+                                            }
+                                        }
+                                )
+                            }
                         }
                     }
                     if (ch.id == current?.id) Text("▶", color = Accent, fontSize = 18.sp)

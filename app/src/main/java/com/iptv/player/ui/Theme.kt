@@ -95,7 +95,11 @@ fun FocusRow(
                     else -> Color.Transparent
                 }
             )
-            .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
+            .border(
+                3.dp,
+                if (focused) Accent else Color.Transparent,     // рамка постоянна - фокус переносится без переизмерения
+                shape
+            )
             .bringIntoViewRequester(biv)
             .onFocusChanged {
                 focused = it.isFocused
@@ -124,7 +128,11 @@ fun TvButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
         modifier = modifier
             .clip(shape)
             .background(Color.White.copy(alpha = 0.14f))
-            .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
+            .border(
+                3.dp,
+                if (focused) Accent else Color.Transparent,     // рамка постоянна - фокус переносится без переизмерения
+                shape
+            )
             .bringIntoViewRequester(biv)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) scope.launch { biv.bringIntoView() } }
             .clickable(onClick = onClick)
@@ -143,7 +151,11 @@ fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Bool
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
+            .border(
+                3.dp,
+                if (focused) Accent else Color.Transparent,     // рамка постоянна - фокус переносится без переизмерения
+                shape
+            )
             .bringIntoViewRequester(biv)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) scope.launch { biv.bringIntoView() } }
             .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
