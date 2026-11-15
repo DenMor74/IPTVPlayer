@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "2.4.0"
+        versionName = "2.4.1"
     }
     buildTypes {
         release {
@@ -39,22 +39,31 @@ androidComponents {
     }
 }
 
+val sharePath = "\\\\ha\\SHARE\\_TV\\"
+
+fun copyLatestApkToShare() {
+    val apkFile = file("build/outputs/apk")
+        .walkTopDown()
+        .filter { it.isFile && it.name.endsWith(".apk") }
+        .maxByOrNull { it.lastModified() }
+    if (apkFile == null) {
+        println("No APK found to copy")
+        return
+    }
+    // Сбой копирования не должен проваливать сборку (шара может быть недоступна)
+    runCatching { copy { from(apkFile); into(sharePath) } }
+        .onSuccess { println("Скопирован ${apkFile.name} в $sharePath") }
+        .onFailure { println("Не удалось скопировать на $sharePath: ${it.message}") }
+}
+
+// Копия на сетевой диск выполняется автоматически после каждой успешной сборки APK
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }.configureEach {
+    doLast { copyLatestApkToShare() }
+}
+
+// Оставлен для запуска из IDE: собирает release, копирование происходит внутри assembleRelease
 tasks.register("copyApkToShare") {
     dependsOn("assembleRelease")
-    doLast {
-        val apkDir = file("build/outputs/apk/release")
-        val apkFile = apkDir.listFiles().filter { it.name.endsWith(".apk") }.maxByOrNull { it.lastModified() }
-        if (apkFile != null) {
-            val sharePath = "\\\\ha\\SHARE\\_TV\\"
-            copy {
-                from(apkFile)
-                into(sharePath)
-            }
-            println("Copied ${apkFile.name} to $sharePath")
-        } else {
-            println("No APK found to copy")
-        }
-    }
 }
 
 dependencies {

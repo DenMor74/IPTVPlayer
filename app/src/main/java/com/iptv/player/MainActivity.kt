@@ -52,12 +52,13 @@ private fun App(vm: MainViewModel) {
     BackHandler { vm.onBack { activity.finish() } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        VideoSurface(vm.controller.player)                 // видео всегда на фоне
+        val controller by vm.controllerFlow.collectAsStateWithLifecycle()
+        VideoSurface(controller.player)                    // видео всегда на фоне
         PlayerOverlay(vm)                                  // OSD и обработка пульта
         if (screen == Screen.GUIDE) GuideScreen(vm)
         if (screen == Screen.SETTINGS) SettingsScreen(vm)
-        if (ui.debug) DebugOverlay(vm.controller)
-        ErrorBar(vm)
+        if (ui.debug) DebugOverlay(controller)
+        ErrorBar(controller)
         ToastBar(vm)
     }
 }

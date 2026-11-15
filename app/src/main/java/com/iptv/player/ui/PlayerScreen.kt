@@ -75,7 +75,8 @@ fun VideoSurface(exo: Player) {
                 keepScreenOn = true
                 player = exo
             }
-        }
+        },
+        update = { it.player = exo }                         // пересадка на новый плеер при смене режима звука
     )
 }
 
@@ -253,12 +254,12 @@ fun ToastBar(vm: MainViewModel) {
 }
 
 @Composable
-fun ErrorBar(vm: MainViewModel) {
-    val e by vm.controller.error.collectAsStateWithLifecycle()
+fun ErrorBar(c: PlayerController) {
+    val e by c.error.collectAsStateWithLifecycle()
     e?.let { msg ->
         Box(Modifier.fillMaxSize().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
             Text(msg, color = Color(0xFFFFAB91), fontSize = 22.sp, modifier = Modifier.glass().padding(horizontal = 24.dp, vertical = 12.dp))
         }
-        vm.controller.error.value = null
+        c.error.value = null
     }
 }

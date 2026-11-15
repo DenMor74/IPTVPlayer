@@ -56,7 +56,7 @@ class DebugState {
  * Канал переключается заменой MediaItem (без пересоздания плеера).
  */
 @OptIn(UnstableApi::class)
-class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
+class PlayerController(private val ctx: Context, private val pcmOnly: Boolean) {
     val debug = DebugState()
     private val main = Handler(Looper.getMainLooper())
     private var retries = 0
@@ -87,11 +87,15 @@ class PlayerController(private val ctx: Context, pcmOnly: Boolean = false) {
      */
     private val renderers = object : DefaultRenderersFactory(ctx) {
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink? {
-            val b = DefaultAudioSink.Builder(context)
+            // Builder БЕЗ Context: только в этом случае setAudioCapabilities реально применяется.
+            // С Context media3 1.11 берёт capabilities из динамического ресивера и флаг PCM игнорирует.
+            val caps = if (pcmOnly) AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES
+                       else AudioCapabilities.getCapabilities(context)
+            return DefaultAudioSink.Builder()
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-            if (pcmOnly) b.setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
-            return b.build()
+                .setAudioCapabilities(caps)
+                .build()
         }
     }.apply {
         setEnableDecoderFallback(true)

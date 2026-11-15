@@ -38,7 +38,9 @@ data class UiSettings(
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = AppSettings(app)
     private val repo = Repository(app)
-    val controller = PlayerController(app, settings.pcmAudioOnly)
+    private var controllerInstance = PlayerController(app, settings.pcmAudioOnly)
+    val controller: PlayerController get() = controllerInstance
+    val controllerFlow = MutableStateFlow(controllerInstance)   // для UI: перестроение при смене режима звука
 
     val channels = MutableStateFlow<List<Channel>>(emptyList())
     val current = MutableStateFlow<Channel?>(null)
@@ -304,8 +306,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setClockOverlay(v: Boolean) { settings.clockOverlay = v; ui.value = readUi() }
     fun setClockPosition(pos: String) { settings.clockPosition = pos; ui.value = readUi() }
     fun setPcm(v: Boolean) {
-        settings.pcmAudioOnly = v; ui.value = readUi()
-        showToast("Режим звука изменится после перезапуска приложения")
+        settings.pcmAudioOnly = v
+        // Режим звука шит в AudioSink при создании: пересоздаём контроллер, продолжая тот же канал
+        val old = controllerInstance
+        controllerInstance = PlayerController(getApplication(), v)
+        controllerFlow.value = controllerInstance
+        current.value?.let { playChannel(it, showOsd = false) }
+        old.release()
+        ui.value = readUi()
+        showToast(if (v) "Звук: только PCM - громкость с пульта приставки" else "Звук: AC3/E-AC3 передаются на ТВ")
     }
     fun setDebug(v: Boolean) { settings.debugOverlay = v; ui.value = readUi() }
     fun setFontSize(v: String) { settings.fontSize = v; ui.value = readUi() }
@@ -323,7 +332,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        controller.release()
+        controllerInstance.release()
         super.onCleared()
     }
 }

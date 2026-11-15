@@ -97,7 +97,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 ClockPositionRow(ui.clockPosition) { vm.setClockPosition(it) }
             }
 
-            SwitchRow("Звук только PCM", "Громкость работает на всех каналах (AC3/E-AC3 декодируются, без передачи на ТВ). Нужен перезапуск", ui.pcm) { vm.setPcm(it) }
+            SwitchRow("Звук только PCM", "Громкость регулируется пультом приставки на всех каналах (AC3/E-AC3 декодируются, без передачи на ТВ)", ui.pcm) { vm.setPcm(it) }
             SwitchRow("Отладка буфера", "Сегменты и статистика в правом нижнем углу при просмотре", ui.debug) { vm.setDebug(it) }
 
             FontSizeRow(ui.fontSize) { vm.setFontSize(it) }
