@@ -39,6 +39,11 @@ class AppSettings(ctx: Context) {
         get() = p.getString("last", null)
         set(v) = p.edit { putString("last", v) }
 
+    /** Избранные каналы: id через запятую. */
+    var favorites: Set<String>
+        get() = p.getString("favs", "")?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+        set(v) = p.edit { putString("favs", v.joinToString(",")) }
+
     /** Эфирное ТВ: kind = none | app | input, id = пакет приложения или id входа ТВ. */
     var terrKind: String
         get() = p.getString("terr_kind", "none") ?: "none"

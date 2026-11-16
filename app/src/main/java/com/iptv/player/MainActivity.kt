@@ -1,5 +1,6 @@
 package com.iptv.player
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -33,10 +34,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        vm.onExternalIntent(intent)                        // команда из Home Assistant / adb при холодном старте
         setContent {
             val ui by vm.ui.collectAsStateWithLifecycle()
             IptvTheme(fontSizeScale = ui.fontSize) { App(vm) }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        vm.onExternalIntent(intent)                        // команда, пока приложение живо (launchMode=singleTask)
     }
 
     override fun onStart() { super.onStart(); vm.onForeground() }

@@ -49,6 +49,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val playlistInfo = MutableStateFlow("Плейлист: не загружен")
     val guideGroups = MutableStateFlow<List<String>>(emptyList())
     val screen = MutableStateFlow(Screen.PLAYER)
+    val favorites = MutableStateFlow<Set<String>>(emptySet())
     val osd = MutableStateFlow(false)
     val osdToken = MutableStateFlow(0)
     val now = MutableStateFlow(System.currentTimeMillis())
@@ -68,9 +69,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     init {
+        favorites.value = settings.favorites
         viewModelScope.launch { while (true) { now.value = System.currentTimeMillis(); delay(15_000) } }
         viewModelScope.launch { startup() }
         viewModelScope.launch { epgWatcher() }
+    }
+
+    /** Долгое нажатие OK в меню каналов: добавляет/убирает канал в избранном. */
+    fun toggleFavorite(ch: Channel) {
+        val cur = favorites.value.toMutableSet()
+        val added = cur.add(ch.id)
+        favorites.value = cur
+        settings.favorites = cur
+        showToast(if (added) "★ В избранном: ${ch.name}" else "Убрано из избранного: ${ch.name}")
     }
 
     private fun base() = Endpoints.normalizeBase(settings.haAddress)
@@ -330,6 +341,106 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!ok) showToast("Не удалось открыть эфирное ТВ")
         return ok
     }
+
+    // ---------- ввод номера канала цифрами с пульта ----------
+
+    /** Незавершённый ввод номера (показывается на экране); null - ввода нет. */
+    val pendingNumber = MutableStateFlow<String?>(null)
+    private var numEntryJob: Job? = null
+
+    fun pushDigit(d: Char) {
+        pendingNumber.value = ((pendingNumber.value ?: "") + d).take(4)
+        // Ввод подтверждается либо Enter, либо таймаутом 2 с
+        numEntryJob?.cancel()
+        numEntryJob = viewModelScope.launch { delay(2000); commitNumberEntry() }
+    }
+
+    fun commitNumberEntry() {
+        numEntryJob?.cancel()
+        val s = pendingNumber.value ?: return
+        pendingNumber.value = null
+        val n = s.toIntOrNull() ?: return
+        val ch = findChannelByNumber(n)
+        if (ch != null) playChannel(ch)
+        else showToast("Канал $n не найден")
+    }
+
+    fun cancelNumberEntry() { numEntryJob?.cancel(); pendingNumber.value = null }
+
+    // ---------- внешнее управление (Home Assistant / adb / deep link) ----------
+
+    fun onExternalIntent(i: android.content.Intent) {
+        when (i.action) {
+            android.content.Intent.ACTION_VIEW ->
+                i.data?.let { d -> viewModelScope.launch { handleExternalUri(d) } }
+
+            // Глобальный поиск ТВ / ассистент: «включи канал Россия» (шаг 1 голосовой интеграции)
+            android.content.Intent.ACTION_SEARCH,
+            "com.google.android.gms.actions.SEARCH_ACTION",
+            "android.media.action.MEDIA_PLAY_FROM_SEARCH" -> {
+                val q = i.getStringExtra("query")
+                    ?: i.getStringExtra(android.app.SearchManager.QUERY)
+                if (!q.isNullOrBlank()) viewModelScope.launch {
+                    waitForChannels()
+                    val ch = findChannelByName(q)
+                    if (ch != null) playChannel(ch) else showToast("Канал не найден: $q")
+                }
+            }
+        }
+    }
+
+    /** Ждёт загрузку плейлиста (до ~15 с) - для внешних команд на холодном старте. */
+    private suspend fun waitForChannels() {
+        repeat(60) {
+            if (channels.value.isNotEmpty()) return
+            delay(250)
+        }
+    }
+
+    private suspend fun handleExternalUri(uri: android.net.Uri) {
+        waitForChannels()
+        val ch = resolveExternalChannel(uri)
+        if (ch != null) playChannel(ch) else showToast("Канал не найден: $uri")
+    }
+
+    private fun resolveExternalChannel(uri: android.net.Uri): Channel? = when (uri.scheme?.lowercase()) {
+        // iptvplayer://play?num=11 | ?name=рен тв | ?url=<адрес потока>
+        "iptvplayer" -> {
+            val num = uri.getQueryParameter("num")?.toIntOrNull()
+            val name = uri.getQueryParameter("name")
+            val url = uri.getQueryParameter("url")
+            when {
+                num != null -> findChannelByNumber(num)
+                !name.isNullOrBlank() -> findChannelByName(name)
+                !url.isNullOrBlank() -> findChannelByUrl(url) ?: externalChannel(url, "Внешний поток")
+                else -> null
+            }
+        }
+        // Прямая ссылка на поток (am start -a VIEW -d "<http-url>" -t "video/*")
+        "http", "https", "rtsp", "rtmp", "udp", "m3u8" -> findChannelByUrl(uri.toString()) ?: externalChannel(uri.toString(), uri.host ?: "Внешний поток")
+        else -> null
+    }
+
+    private fun findChannelByNumber(n: Int): Channel? = channels.value.firstOrNull { it.number == n }
+
+    private fun findChannelByName(q: String): Channel? {
+        val target = EpgLogic.normalizeName(q)
+        return channels.value.firstOrNull { EpgLogic.normalizeName(it.name) == target }
+            ?: channels.value.firstOrNull { EpgLogic.normalizeName(it.name).contains(target) }
+    }
+
+    private fun findChannelByUrl(u: String): Channel? =
+        channels.value.firstOrNull { it.url == u }
+            ?: channels.value.firstOrNull { it.id == externalChannelId(u) }
+
+    private fun externalChannel(url: String, name: String) = Channel(
+        id = externalChannelId(url), number = 0, name = name,
+        group = "Внешний", logo = null, url = url, tvgId = null
+    )
+
+    // id прямой ссылки совпадает с логикой M3uParser: имя файла без расширения и query
+    private fun externalChannelId(url: String) =
+        url.substringBefore('?').substringAfterLast('/').substringBefore('.').ifBlank { "ext" } + "_ext"
 
     override fun onCleared() {
         controllerInstance.release()

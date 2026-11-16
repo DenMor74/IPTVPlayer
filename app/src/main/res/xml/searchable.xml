@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Конфигурация системного (глобального) поиска Android TV: ассистент и поиск с пульта
+     видят приложение и могут отправлять запросы ACTION_SEARCH / MEDIA_PLAY_FROM_SEARCH.
+     SearchSuggestionsProvider отдаёт каналы и передачи - благодаря includeInGlobalSearch
+     приложение появляется в списке «где искать» настроек поиска ТВ. -->
+<searchable xmlns:android="http://schemas.android.com/apk/res/android"
+    android:label="@string/search_label"
+    android:hint="@string/search_hint"
+    android:searchMode="showSearchLabelAsBadge"
+    android:voiceSearchMode="showVoiceSearchButton|launchRecognizer"
+    android:inputType="text"
+    android:includeInGlobalSearch="true"
+    android:searchSettingsDescription="@string/search_settings"
+    android:searchSuggestAuthority="com.iptv.player.search"
+    android:searchSuggestIntentAction="android.intent.action.VIEW"
+    android:searchSuggestIntentData="iptvplayer://play"
+    android:searchSuggestThreshold="1" />

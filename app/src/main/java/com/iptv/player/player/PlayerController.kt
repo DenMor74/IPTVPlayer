@@ -18,6 +18,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlaybackException
@@ -135,8 +136,17 @@ class PlayerController(private val ctx: Context, private val pcmOnly: Boolean) {
 
                 // закрываем соединение и заново запрашиваем, показываем сообщение
                 val msg = when {
-                    ex.message?.contains("timeout", ignoreCase = true) == true -> "Таймаут подключения, перезапуск..."
-                    ex.message?.contains("IOException", ignoreCase = true) == true -> "Ошибка сети, перезапуск..."
+                    ex.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> {
+                        val code = generateSequence(ex as? Throwable) { it.cause }
+                            .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+                            .firstOrNull()?.responseCode
+                        "Канал недоступен (HTTP ${code ?: "?"}), перезапуск..."
+                    }
+                    ex.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                        ex.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+                        "Ошибка сети, перезапуск..."
+                    ex.message?.contains("timeout", ignoreCase = true) == true ->
+                        "Таймаут подключения, перезапуск..."
                     else -> "Ошибка воспроизведения, перезапуск..."
                 }
                 error.value = msg

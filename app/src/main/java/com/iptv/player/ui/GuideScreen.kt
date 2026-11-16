@@ -66,6 +66,7 @@ fun GuideScreen(vm: MainViewModel) {
     val current by vm.current.collectAsStateWithLifecycle()
     val epg by vm.epg.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
+    val favorites by vm.favorites.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
 
     var group by remember { mutableStateOf(current?.group ?: ALL) }
@@ -102,13 +103,18 @@ fun GuideScreen(vm: MainViewModel) {
                 if (e.type != KeyEventType.KeyDown) {
                     false
                 } else when (e.key) {
-                    // Влево с каналов - выдвинуть категории обратно и перевести фокус на них
+                    // Влево с каналов - выдвинуть категории, затем перевести фокус на них.
+                    // Колонка категорий при свёрнутом состоянии не композируется, поэтому фокус-таргет
+                    // прикрепляется только когда выезжающая колонка начинает рисоваться - пробуем, пока не получится.
                     Key.DirectionLeft -> when (pane) {
                         Pane.Channels -> {
                             pane = Pane.Categories
                             scope.launch {
-                                delay(100)
-                                runCatching { catFocus.requestFocus() }
+                                repeat(20) {
+                                    delay(50)
+                                    val ok = runCatching { catFocus.requestFocus() }.isSuccess
+                                    if (ok) return@launch
+                                }
                             }
                             true
                         }
@@ -119,8 +125,11 @@ fun GuideScreen(vm: MainViewModel) {
                         Pane.Categories -> {
                             pane = Pane.Channels
                             scope.launch {
-                                delay(100)
-                                runCatching { currentChannelFocus.requestFocus() }
+                                repeat(20) {
+                                    delay(50)
+                                    val ok = runCatching { currentChannelFocus.requestFocus() }.isSuccess
+                                    if (ok) return@launch
+                                }
                             }
                             true
                         }
@@ -192,8 +201,27 @@ fun GuideScreen(vm: MainViewModel) {
                 val fraction = if (prog != null && prog.stop > prog.start) {
                     ((now - prog.start).toFloat() / (prog.stop - prog.start)).coerceIn(0f, 1f)
                 } else null
+                val isFav = ch.id in favorites
+                // Долгое нажатие OK: маркер срабатывания по автоповтору кнопки (первый repeat съедается,
+                // и отпускание глотается, чтобы короткий click не сыграл следом)
+                var longToggled by remember { mutableStateOf(false) }
+                val longPressKeys = Modifier.onPreviewKeyEvent { e ->
+                    val center = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                    if (!center) return@onPreviewKeyEvent false
+                    when {
+                        e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 1 && !longToggled -> {
+                            longToggled = true
+                            vm.toggleFavorite(ch)
+                            true
+                        }
+                        e.type == KeyEventType.KeyUp -> { val t = longToggled; longToggled = false; t }
+                        else -> longToggled
+                    }
+                }
                 FocusRow(
-                    modifier = if (ch.id == current?.id) Modifier.focusRequester(currentChannelFocus) else Modifier,
+                    modifier = longPressKeys.then(
+                        if (ch.id == current?.id) Modifier.focusRequester(currentChannelFocus) else Modifier
+                    ),
                     selected = ch.id == current?.id,
                     onFocus = { focusedCh = ch; focusedProg = null; pane = Pane.Channels },
                     onClick = { vm.playChannel(ch); vm.closeOverlay() }
@@ -204,7 +232,7 @@ fun GuideScreen(vm: MainViewModel) {
                         if (title != null) {
                             Text(
                                 title,
-                                color = Accent, fontSize = 20.sp, lineHeight = 22.sp,
+                                color = Accent, fontSize = 24.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.autoScrollingText()
                             )
@@ -225,6 +253,7 @@ fun GuideScreen(vm: MainViewModel) {
                             }
                         }
                     }
+                    if (isFav) Text("★", color = Accent, fontSize = 15.sp)
                     if (ch.id == current?.id) Text("▶", color = Accent, fontSize = 18.sp)
                 }
             }
@@ -233,9 +262,9 @@ fun GuideScreen(vm: MainViewModel) {
         // ---------- 3. программа и описание ----------
         Column(
             Modifier
-                .weight(0.58f)
+                .weight(0.40f)
                 .fillMaxHeight()
-                .padding(12.dp)
+                .padding(2.dp)
         ) {
             val progList = remember(focusedCh?.id, now) {
                 val all = epg[focusedCh?.id].orEmpty()
