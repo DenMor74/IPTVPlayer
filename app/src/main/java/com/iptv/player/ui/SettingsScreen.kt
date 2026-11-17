@@ -91,6 +91,11 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             Text(playlistInfo, color = Muted, fontSize = 18.sp)
             Text(epgInfo, color = Muted, fontSize = 18.sp)
+            // Адрес виртуального пульта: кнопки каналов на странице HA стучатся сюда напрямую
+            Text(
+                "Виртуальный пульт: http://${com.iptv.player.remote.RemoteServer.ipAddress() ?: "нет сети"}:${com.iptv.player.remote.RemoteServer.PORT}/play?num=N",
+                color = Muted, fontSize = 18.sp
+            )
 
             SwitchRow("Постоянные часы поверх видео", "Показывать текущее время во время просмотра", ui.clockOverlay) { vm.setClockOverlay(it) }
             if (ui.clockOverlay) {

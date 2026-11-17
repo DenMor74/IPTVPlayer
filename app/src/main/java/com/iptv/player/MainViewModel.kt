@@ -12,6 +12,7 @@ import com.iptv.player.data.Programme
 import com.iptv.player.data.Repository
 import com.iptv.player.player.PlayerController
 import com.iptv.player.player.TerrestrialTv
+import com.iptv.player.remote.RemoteServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -70,10 +71,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         favorites.value = settings.favorites
+        startRemoteServer()
         viewModelScope.launch { while (true) { now.value = System.currentTimeMillis(); delay(15_000) } }
         viewModelScope.launch { startup() }
         viewModelScope.launch { epgWatcher() }
     }
+
+    // ---------- виртуальный пульт (HTTP на ТВ): страница HA / телефонное приложение ----------
+
+    private var remoteServer: RemoteServer? = null
+
+    private fun startRemoteServer() {
+        remoteServer = RemoteServer(RemoteServer.PORT) { path, params ->
+            // вызов из потока сервера: только чтение StateFlow, действия - через viewModelScope (main)
+            when (path) {
+                "/play" -> {
+                    val num = params["num"]?.toIntOrNull()
+                    val name = params["name"]
+                    val ch = when {
+                        num != null -> findChannelByNumber(num)
+                        !name.isNullOrBlank() -> findChannelByName(name)
+                        else -> null
+                    }
+                    if (ch == null) "{\"ok\":false,\"error\":\"channel not found\"}"
+                    else {
+                        viewModelScope.launch { playChannel(ch) }
+                        "{\"ok\":true,\"num\":${ch.number},\"name\":\"${jsonEsc(ch.name)}\"}"
+                    }
+                }
+                "/next" -> { viewModelScope.launch { next() }; "{\"ok\":true}" }
+                "/prev" -> { viewModelScope.launch { prev() }; "{\"ok\":true}" }
+                "/state" -> current.value?.let { ch ->
+                    "{\"ok\":true,\"num\":${ch.number},\"name\":\"${jsonEsc(ch.name)}\",\"group\":\"${jsonEsc(ch.group)}\"}"
+                } ?: "{\"ok\":false,\"error\":\"not playing\"}"
+                "/channels" -> channels.value.joinToString(
+                    ",", prefix = "{\"ok\":true,\"channels\":[", postfix = "]}"
+                ) { "{\"num\":${it.number},\"name\":\"${jsonEsc(it.name)}\",\"group\":\"${jsonEsc(it.group)}\"}" }
+                else -> "{\"ok\":false,\"error\":\"unknown\"}"
+            }
+        }.also { it.start() }
+    }
+
+    private fun jsonEsc(s: String) =
+        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ")
 
     /** Долгое нажатие OK в меню каналов: добавляет/убирает канал в избранном. */
     fun toggleFavorite(ch: Channel) {
@@ -443,6 +483,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         url.substringBefore('?').substringAfterLast('/').substringBefore('.').ifBlank { "ext" } + "_ext"
 
     override fun onCleared() {
+        remoteServer?.stop()
         controllerInstance.release()
         super.onCleared()
     }

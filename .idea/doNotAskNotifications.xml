@@ -4,6 +4,7 @@
     <option name="idToDisplayName">
       <map>
         <entry key="vcs.commit.checks.failed" value="Проверки Закоммитить и выполнить пуш [p] не пройдены" />
+        <entry key="vcs.commit.finished" value="1 файл зафиксировано" />
       </map>
     </option>
   </component>
