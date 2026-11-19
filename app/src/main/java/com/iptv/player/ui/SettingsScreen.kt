@@ -59,6 +59,8 @@ fun SettingsScreen(vm: MainViewModel) {
     val playlistInfo by vm.playlistInfo.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     var ha by remember { mutableStateOf(ui.ha) }
+    var haToken by remember { mutableStateOf(vm.haTokenValue()) }
+    var haTvEntity by remember { mutableStateOf(vm.haTvEntityValue()) }
     var picker by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(100); runCatching { firstFocus.requestFocus() } }   // пульт сразу попадает в меню
@@ -91,6 +93,29 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             Text(playlistInfo, color = Muted, fontSize = 18.sp)
             Text(epgInfo, color = Muted, fontSize = 18.sp)
+
+            // HA-мост: с приставки входами ТВ переключают через REST API HA (секция «входы через HA» в пикере эфирного ТВ)
+            Text("HA-токен для команд ТВ (необязательно)", color = Muted, fontSize = 20.sp)
+            OutlinedTextField(
+                value = haToken, onValueChange = { haToken = it }, singleLine = true,
+                textStyle = TextStyle(fontSize = 22.sp, color = Color.White),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent, unfocusedBorderColor = Color(0x55FFFFFF), cursorColor = Accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Сущность в HA для команд ТВ/CEC (напр. media_player.zal_box)", color = Muted, fontSize = 20.sp)
+            OutlinedTextField(
+                value = haTvEntity, onValueChange = { haTvEntity = it }, singleLine = true,
+                textStyle = TextStyle(fontSize = 22.sp, color = Color.White),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { vm.setHaToken(haToken); vm.setHaTvEntity(haTvEntity); focusManager.clearFocus() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent, unfocusedBorderColor = Color(0x55FFFFFF), cursorColor = Accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
             // Адрес виртуального пульта: кнопки каналов на странице HA стучатся сюда напрямую
             Text(
                 "Виртуальный пульт: http://${com.iptv.player.remote.RemoteServer.ipAddress() ?: "нет сети"}:${com.iptv.player.remote.RemoteServer.PORT}/play?num=N",
@@ -103,6 +128,7 @@ fun SettingsScreen(vm: MainViewModel) {
             }
 
             SwitchRow("Звук только PCM", "Громкость регулируется пультом приставки на всех каналах (AC3/E-AC3 декодируются, без передачи на ТВ)", ui.pcm) { vm.setPcm(it) }
+            SwitchRow("Иконки каналов", "Загружать логотипы из плейлиста (tvg-logo), с кэшем. Отключите на слабых устройствах", ui.logos) { vm.setLogos(it) }
             SwitchRow("Отладка буфера", "Сегменты и статистика в правом нижнем углу при просмотре", ui.debug) { vm.setDebug(it) }
 
             FontSizeRow(ui.fontSize) { vm.setFontSize(it) }
@@ -118,16 +144,28 @@ fun SettingsScreen(vm: MainViewModel) {
         }
 
         if (picker) TerrestrialPicker(
+            haAvailable = vm.haConfigured(),
             onPick = { t -> vm.setTerrestrial(t.kind, t.id, t.label); picker = false }
         )
     }
 }
 
 @Composable
-private fun TerrestrialPicker(onPick: (TerrTarget) -> Unit) {
+private fun TerrestrialPicker(haAvailable: Boolean, onPick: (TerrTarget) -> Unit) {
     val ctx = LocalContext.current
     val inputs = remember { TerrestrialTv.inputs(ctx).map { it.copy(label = "Вход: ${it.label}") } }
     val apps = remember { TerrestrialTv.apps(ctx).map { it.copy(label = "Приложение: ${it.label}") } }
+    // С приставки локальные входы ТВ не видны - команды идут через HA (adb на ТВ).
+    // Если HA-мост настроен, показываем фикс. набор; 170 - перебор, 243-246 - HDMI 1-4.
+    val haInputs = remember(haAvailable) {
+        if (!haAvailable) emptyList() else listOf(
+            TerrTarget("ha", "input keyevent 170", "Вход ТВ: переключить по кругу"),
+            TerrTarget("ha", "input keyevent 243", "Вход ТВ: HDMI 1"),
+            TerrTarget("ha", "input keyevent 244", "Вход ТВ: HDMI 2"),
+            TerrTarget("ha", "input keyevent 245", "Вход ТВ: HDMI 3"),
+            TerrTarget("ha", "input keyevent 246", "Вход ТВ: HDMI 4")
+        )
+    }
     val firstItemFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(100); runCatching { firstItemFocus.requestFocus() } }
 
@@ -149,6 +187,17 @@ private fun TerrestrialPicker(onPick: (TerrTarget) -> Unit) {
                     items(inputs) { t ->
                         FocusRow(onClick = { onPick(t) }) {
                             Text("🔌  ${t.label}", color = Color.White, fontSize = 22.sp)
+                        }
+                    }
+                }
+                if (haInputs.isNotEmpty()) {
+                    item {
+                        Text("ВХОДЫ ТЕЛЕВИЗОРА ЧЕРЕЗ HA (с приставки)", color = Accent, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp, start = 8.dp))
+                    }
+                    items(haInputs) { t ->
+                        FocusRow(onClick = { onPick(t) }) {
+                            Text("🔀  ${t.label}", color = Color.White, fontSize = 22.sp)
                         }
                     }
                 }

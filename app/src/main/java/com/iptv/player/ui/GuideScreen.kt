@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,7 +37,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -226,9 +230,24 @@ fun GuideScreen(vm: MainViewModel) {
                     onFocus = { focusedCh = ch; focusedProg = null; pane = Pane.Channels },
                     onClick = { vm.playChannel(ch); vm.closeOverlay() }
                 ) {
-                    Text("${ch.number}", color = Muted, fontSize = 16.sp, modifier = Modifier.width(40.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(ch.name, color = Color.LightGray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.autoScrollingText())
+                    // Логотип канала вместо цифры, максимум крупно. Нет логотипа - крупная цифра.
+                    ChannelLogo(
+                        if (ui.logos) ch.logo else null,
+                        Modifier.size(64.dp, 40.dp)
+                    ) {
+                        Box(Modifier.size(64.dp, 40.dp), contentAlignment = Alignment.Center) {
+                            Text("${ch.number}", color = Muted, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        // Номер канала переехал к названию: серым впереди имени
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(SpanStyle(color = Muted)) { append("${ch.number}  ") }
+                                withStyle(SpanStyle(color = Color.LightGray)) { append(ch.name) }
+                            },
+                            fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.autoScrollingText()
+                        )
                         if (title != null) {
                             Text(
                                 title,

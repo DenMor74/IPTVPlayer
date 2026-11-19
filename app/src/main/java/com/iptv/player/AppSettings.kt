@@ -44,6 +44,16 @@ class AppSettings(ctx: Context) {
         get() = p.getString("favs", "")?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
         set(v) = p.edit { putString("favs", v.joinToString(",")) }
 
+    /** Долгоживущий токен HA (профиль -> Безопасность) для команд пульту ТВ с приставки. */
+    var haToken: String
+        get() = p.getString("ha_token", "") ?: ""
+        set(v) = p.edit { putString("ha_token", v) }
+
+    /** Сущность ТВ в HA (media_player.tv_zal) - куда слать adb-команды с приставки. */
+    var haTvEntity: String
+        get() = p.getString("ha_tv_entity", "") ?: ""
+        set(v) = p.edit { putString("ha_tv_entity", v) }
+
     /** Эфирное ТВ: kind = none | app | input, id = пакет приложения или id входа ТВ. */
     var terrKind: String
         get() = p.getString("terr_kind", "none") ?: "none"
@@ -54,6 +64,11 @@ class AppSettings(ctx: Context) {
     var terrLabel: String
         get() = p.getString("terr_label", "") ?: ""
         set(v) = p.edit { putString("terr_label", v) }
+
+    /** Иконки каналов из плейлиста (tvg-logo): грузятся с кэшем, на слабых устройствах можно отключить. */
+    var showLogos: Boolean
+        get() = p.getBoolean("logos", true)
+        set(v) = p.edit { putBoolean("logos", v) }
 
     /** Размер шрифта панелей: "small", "medium", "large". */
     var fontSize: String

@@ -12,6 +12,7 @@ import com.iptv.player.data.Programme
 import com.iptv.player.data.Repository
 import com.iptv.player.player.PlayerController
 import com.iptv.player.player.TerrestrialTv
+import com.iptv.player.remote.HaBridge
 import com.iptv.player.remote.RemoteServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,7 +34,8 @@ data class UiSettings(
     val ha: String, val clock: Boolean, val debug: Boolean,
     val terrKind: String, val terrId: String, val terrLabel: String,
     val pcm: Boolean, val fontSize: String,
-    val clockOverlay: Boolean, val clockPosition: String
+    val clockOverlay: Boolean, val clockPosition: String,
+    val logos: Boolean
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -66,7 +68,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun readUi() = UiSettings(
         settings.haAddress, settings.showClock, settings.debugOverlay,
         settings.terrKind, settings.terrId, settings.terrLabel, settings.pcmAudioOnly,
-        settings.fontSize, settings.clockOverlay, settings.clockPosition
+        settings.fontSize, settings.clockOverlay, settings.clockPosition,
+        settings.showLogos
     )
 
     init {
@@ -128,7 +131,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- запуск: мгновенный старт видео из кэша; плейлист и EPG - потом, в фоне ----------
     private suspend fun startup() {
+        android.util.Log.d("IPTV", "startup begin")
         val cached = withContext(Dispatchers.IO) { repo.cachedPlaylist() }
+        android.util.Log.d("IPTV", "cached playlist: ${cached?.size ?: -1}")
         if (cached != null) applyChannels(cached, "кэш")   // воспроизведение стартует сразу
 
         // Свежий плейлист качаем параллельно - он не задерживает старт видео
@@ -196,6 +201,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "epg.xml" to weekDeferred
         )) {
             val m = deferred.await()
+            android.util.Log.d("IPTV", "cache $name: chan=${m?.size} ent=${m?.values?.sumOf { it.size }} actual=${m != null && EpgLogic.isActual(m, t)}")
             if (m != null && EpgLogic.isActual(m, t)) {
                 publish(m, "кэш $name", overwrite = true)
                 return
@@ -215,6 +221,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var actual = false
         // Проверяем hourly
         val hourlyRes = hourlyJob.await()
+        android.util.Log.d("IPTV", "net hourly: ${hourlyRes.javaClass.simpleName}" + (hourlyRes as? LoadResult.Success)?.let { " chan=${it.data.size} ent=${it.data.values.sumOf { l -> l.size }} actual=${EpgLogic.isActual(it.data, t)}" } ?: "")
         if (hourlyRes is LoadResult.Success) {
             val hourly = hourlyRes.data
             if (EpgLogic.isActual(hourly, t)) { publish(hourly, "hourly", overwrite = true); actual = true }
@@ -223,6 +230,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Проверяем today
         val todayRes = todayJob.await()
+        android.util.Log.d("IPTV", "net today: ${todayRes.javaClass.simpleName}" + (todayRes as? LoadResult.Success)?.let { " chan=${it.data.size} ent=${it.data.values.sumOf { l -> l.size }} actual=${EpgLogic.isActual(it.data, t)}" } ?: "")
         if (todayRes is LoadResult.Success) {
             val today = todayRes.data
             if (EpgLogic.isActual(today, t)) {
@@ -355,6 +363,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun setClock(v: Boolean) { settings.showClock = v; ui.value = readUi() }
     fun setClockOverlay(v: Boolean) { settings.clockOverlay = v; ui.value = readUi() }
+
+    fun setLogos(v: Boolean) { settings.showLogos = v; ui.value = readUi() }
     fun setClockPosition(pos: String) { settings.clockPosition = pos; ui.value = readUi() }
     fun setPcm(v: Boolean) {
         settings.pcmAudioOnly = v
@@ -374,9 +384,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ui.value = readUi()
     }
 
+    /** HA-мост настроен: токен и сущность ТВ заполнены (для переключения входов с приставки). */
+    fun haConfigured() = settings.haToken.isNotBlank() && settings.haTvEntity.isNotBlank()
+    fun haTokenValue() = settings.haToken
+    fun haTvEntityValue() = settings.haTvEntity
+    fun setHaToken(v: String) { settings.haToken = v.trim(); ui.value = readUi() }
+    fun setHaTvEntity(v: String) { settings.haTvEntity = v.trim(); ui.value = readUi() }
+
     fun launchTerrestrial(): Boolean {
         val u = ui.value
         if (u.terrKind == "none") { showToast("Эфирное ТВ не выбрано в настройках"); return false }
+        // Вход/команда на ТВ через HA: берём, когда плеер на приставке и локально входов ТВ не видно.
+        // id хранит готовую adb-команду (например, "input keyevent 243" - HDMI 1).
+        if (u.terrKind == "ha") {
+            val token = settings.haToken
+            val entity = settings.haTvEntity
+            if (token.isBlank() || entity.isBlank()) {
+                showToast("Не настроен доступ к HA: токен и сущность ТВ (см. настройки)")
+                return false
+            }
+            showToast("Переключаю: ${u.terrLabel}")
+            viewModelScope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { HaBridge.adbCommand(base(), token, entity, u.terrId) }.getOrDefault(false)
+                }
+                if (!ok) showToast("Не удалось переключить вход через HA")
+            }
+            return true
+        }
         val ok = TerrestrialTv.launch(getApplication(), u.terrKind, u.terrId)
         if (!ok) showToast("Не удалось открыть эфирное ТВ")
         return ok

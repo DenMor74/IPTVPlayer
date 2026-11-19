@@ -281,11 +281,18 @@ private fun OsdPanel(
 
         // ---------- основная информация (компактно) ----------
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Box(
-                Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1D2B3D)),
-                contentAlignment = Alignment.Center
+            // Логотип из плейлиста, если включён и загрузился, иначе - инициалы
+            val logos = vm.ui.value.logos
+            ChannelLogo(
+                if (logos) ch?.logo else null,
+                Modifier.size(72.dp)
             ) {
-                Text(ch?.name?.take(2)?.uppercase() ?: "TV", color = Accent, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1D2B3D)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(ch?.name?.take(2)?.uppercase() ?: "TV", color = Accent, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                }
             }
             Column(Modifier.weight(1f)) {
                 Text("${ch?.number ?: ""} · ${ch?.group ?: ""}", color = Muted, fontSize = 16.sp)
@@ -317,7 +324,9 @@ private fun OsdPanel(
 /** Отладка: компактные сегменты и статистика в строчку, прижата к низу. */
 @Composable
 fun DebugOverlay(c: PlayerController) {
-    LaunchedEffect(Unit) { while (true) { c.refreshDebug(); delay(500) } }
+    // Ключ - контроллер: при его пересоздании (смена режима звука) цикл перезапускается заново,
+    // иначе текст продолжал бы собираться с выпущенным плеером и пропадал.
+    LaunchedEffect(c) { while (true) { runCatching { c.refreshDebug() }; delay(500) } }
     val d = c.debug
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
         Row(
