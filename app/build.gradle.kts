@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "2.5.3"
+        versionName = "2.5.5"
     }
     buildTypes {
         release {
@@ -40,6 +40,7 @@ androidComponents {
 }
 
 val sharePath = "\\\\ha\\SHARE\\_TV\\"
+val wwwPath = "\\\\ha\\config\\www\\iptv\\"
 
 fun copyLatestApkToShare() {
     val apkFile = file("build/outputs/apk")
@@ -54,6 +55,13 @@ fun copyLatestApkToShare() {
     runCatching { copy { from(apkFile); into(sharePath) } }
         .onSuccess { println("Скопирован ${apkFile.name} в $sharePath") }
         .onFailure { println("Не удалось скопировать на $sharePath: ${it.message}") }
+    // Обновление по HTTP: приложение при запуске сверяет свою версию с app_version.txt
+    // и качает app-release.apk (фиксированное имя) из /local/iptv/
+    runCatching {
+        copy { from(apkFile); rename { "app-release.apk" }; into(wwwPath) }
+        file("$wwwPath/app_version.txt").writeText(android.defaultConfig.versionName as String)
+        println("Обновление выложено: $wwwPath (app-release.apk + app_version.txt ${android.defaultConfig.versionName})")
+    }.onFailure { println("Не удалось выложить обновление в $wwwPath: ${it.message}") }
 }
 
 // Копия на сетевой диск выполняется автоматически после каждой успешной сборки APK

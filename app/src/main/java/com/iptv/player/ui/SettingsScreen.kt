@@ -93,29 +93,9 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             Text(playlistInfo, color = Muted, fontSize = 18.sp)
             Text(epgInfo, color = Muted, fontSize = 18.sp)
-
-            // HA-мост: с приставки входами ТВ переключают через REST API HA (секция «входы через HA» в пикере эфирного ТВ)
-            Text("HA-токен для команд ТВ (необязательно)", color = Muted, fontSize = 20.sp)
-            OutlinedTextField(
-                value = haToken, onValueChange = { haToken = it }, singleLine = true,
-                textStyle = TextStyle(fontSize = 22.sp, color = Color.White),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Accent, unfocusedBorderColor = Color(0x55FFFFFF), cursorColor = Accent
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text("Сущность в HA для команд ТВ/CEC (напр. media_player.zal_box)", color = Muted, fontSize = 20.sp)
-            OutlinedTextField(
-                value = haTvEntity, onValueChange = { haTvEntity = it }, singleLine = true,
-                textStyle = TextStyle(fontSize = 22.sp, color = Color.White),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { vm.setHaToken(haToken); vm.setHaTvEntity(haTvEntity); focusManager.clearFocus() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Accent, unfocusedBorderColor = Color(0x55FFFFFF), cursorColor = Accent
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
+            // Версия и проверка обновления (app_version.txt на шаре, сверяется при запуске)
+            val updateVer by vm.updateAvailable.collectAsStateWithLifecycle()
+            UpdateRow(version = vm.currentVersion(), updateVer = updateVer) { vm.startUpdate() }
             // Адрес виртуального пульта: кнопки каналов на странице HA стучатся сюда напрямую
             Text(
                 "Виртуальный пульт: http://${com.iptv.player.remote.RemoteServer.ipAddress() ?: "нет сети"}:${com.iptv.player.remote.RemoteServer.PORT}/play?num=N",
@@ -140,6 +120,30 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
                 Text("Выбрать", color = Accent, fontSize = 22.sp)
             }
+
+            // HA-поля в самом низу: с пульта до переключателей проще дойти, не задевая клавиатуру
+            Text("HA-токен для команд ТВ (необязательно)", color = Muted, fontSize = 20.sp)
+            OutlinedTextField(
+                value = haToken, onValueChange = { haToken = it }, singleLine = true,
+                textStyle = TextStyle(fontSize = 22.sp, color = Color.White),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent, unfocusedBorderColor = Color(0x55FFFFFF), cursorColor = Accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Сущность в HA для команд ТВ/CEC (напр. media_player.zal_box)", color = Muted, fontSize = 20.sp)
+            OutlinedTextField(
+                value = haTvEntity, onValueChange = { haTvEntity = it }, singleLine = true,
+                textStyle = TextStyle(fontSize = 22.sp, color = Color.White),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { vm.setHaToken(haToken); vm.setHaTvEntity(haTvEntity); focusManager.clearFocus() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent, unfocusedBorderColor = Color(0x55FFFFFF), cursorColor = Accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
             Text("OK — выбрать · Назад — закрыть", color = Muted, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
         }
 
@@ -147,6 +151,22 @@ fun SettingsScreen(vm: MainViewModel) {
             haAvailable = vm.haConfigured(),
             onPick = { t -> vm.setTerrestrial(t.kind, t.id, t.label); picker = false }
         )
+    }
+}
+
+/** Версия приложения; когда на шаре есть более новая - строка становится кнопкой обновления. */
+@Composable
+private fun UpdateRow(version: String, updateVer: String?, onUpdate: () -> Unit) {
+    if (updateVer == null) {
+        Text("Версия $version", color = Muted, fontSize = 18.sp)
+    } else {
+        FocusRow(onClick = onUpdate) {
+            Column(Modifier.weight(1f)) {
+                Text("Версия $version → доступно обновление $updateVer", color = Color.White, fontSize = 24.sp)
+                Text("Скачает APK с шары и откроет установку (подтвердите пультом)", color = Muted, fontSize = 16.sp)
+            }
+            Text("Обновить", color = Accent, fontSize = 22.sp)
+        }
     }
 }
 

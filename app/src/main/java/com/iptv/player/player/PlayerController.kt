@@ -217,6 +217,12 @@ class PlayerController(private val ctx: Context, private val pcmOnly: Boolean) {
 
     fun pause() = player.pause()
 
+    /** Полная остановка (ТВ выключен): гасим декодирование и сеть, а не только звук. */
+    fun stopPlayback() = main.post {
+        player.stop()
+        player.clearMediaItems()
+    }
+
     /** Вернуться в эфир после долгого простоя (приложение было в фоне). */
     fun resume(stale: Boolean) {
         val ch = current

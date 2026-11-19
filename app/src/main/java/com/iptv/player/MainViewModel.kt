@@ -59,6 +59,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val toast = MutableStateFlow<String?>(null)
     val ui = MutableStateFlow(readUi())
 
+    /** Доступное обновление: версия с шары, если она новее установленной. */
+    val updateAvailable = MutableStateFlow<String?>(null)
+
     private var epgJob: Job? = null
     private var lastBackAt = 0L
     private var lastZapAt = 0L
@@ -77,7 +80,59 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         startRemoteServer()
         viewModelScope.launch { while (true) { now.value = System.currentTimeMillis(); delay(15_000) } }
         viewModelScope.launch { startup() }
+        viewModelScope.launch { checkUpdate() }
         viewModelScope.launch { epgWatcher() }
+    }
+
+    // ---------- проверка обновления релиза ----------
+
+    /** Установленная версия (versionName из манифеста). */
+    fun currentVersion(): String = runCatching {
+        val ctx = getApplication<Application>()
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
+    }.getOrDefault("")
+
+    /** Сравнение «a.b.c» по числовым сегментам: 2.6.0 > 2.5.11. */
+    fun isNewer(candidate: String, current: String): Boolean {
+        val a = candidate.split('.').map { it.trim().toIntOrNull() ?: 0 }
+        val b = current.split('.').map { it.trim().toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
+    }
+
+    private suspend fun checkUpdate() {
+        // Даю старту видео отработать без конкуренции за сеть
+        delay(8000)
+        val remote = withContext(Dispatchers.IO) { repo.fetchUpdateVersion(base()) } ?: return
+        val current = currentVersion()
+        if (isNewer(remote, current)) updateAvailable.value = remote
+    }
+
+    /** Скачивает APK и запускает системный установщик. */
+    fun startUpdate() {
+        val ctx = getApplication<Application>()
+        showToast("Скачиваю обновление...")
+        viewModelScope.launch {
+            val apk = repo.downloadUpdate(base())
+            if (apk == null) {
+                withContext(Dispatchers.Main) { showToast("Не удалось скачать обновление") }
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                runCatching {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.provider", apk)
+                    ctx.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW)
+                            .setDataAndType(uri, "application/vnd.android.package-archive")
+                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }.onFailure { showToast("Установка не запущена: ${it.message}") }
+            }
+        }
     }
 
     // ---------- виртуальный пульт (HTTP на ТВ): страница HA / телефонное приложение ----------
@@ -131,9 +186,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- запуск: мгновенный старт видео из кэша; плейлист и EPG - потом, в фоне ----------
     private suspend fun startup() {
-        android.util.Log.d("IPTV", "startup begin")
         val cached = withContext(Dispatchers.IO) { repo.cachedPlaylist() }
-        android.util.Log.d("IPTV", "cached playlist: ${cached?.size ?: -1}")
         if (cached != null) applyChannels(cached, "кэш")   // воспроизведение стартует сразу
 
         // Свежий плейлист качаем параллельно - он не задерживает старт видео
@@ -201,7 +254,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "epg.xml" to weekDeferred
         )) {
             val m = deferred.await()
-            android.util.Log.d("IPTV", "cache $name: chan=${m?.size} ent=${m?.values?.sumOf { it.size }} actual=${m != null && EpgLogic.isActual(m, t)}")
             if (m != null && EpgLogic.isActual(m, t)) {
                 publish(m, "кэш $name", overwrite = true)
                 return
@@ -221,7 +273,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var actual = false
         // Проверяем hourly
         val hourlyRes = hourlyJob.await()
-        android.util.Log.d("IPTV", "net hourly: ${hourlyRes.javaClass.simpleName}" + (hourlyRes as? LoadResult.Success)?.let { " chan=${it.data.size} ent=${it.data.values.sumOf { l -> l.size }} actual=${EpgLogic.isActual(it.data, t)}" } ?: "")
         if (hourlyRes is LoadResult.Success) {
             val hourly = hourlyRes.data
             if (EpgLogic.isActual(hourly, t)) { publish(hourly, "hourly", overwrite = true); actual = true }
@@ -230,7 +281,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Проверяем today
         val todayRes = todayJob.await()
-        android.util.Log.d("IPTV", "net today: ${todayRes.javaClass.simpleName}" + (todayRes as? LoadResult.Success)?.let { " chan=${it.data.size} ent=${it.data.values.sumOf { l -> l.size }} actual=${EpgLogic.isActual(it.data, t)}" } ?: "")
         if (todayRes is LoadResult.Success) {
             val today = todayRes.data
             if (EpgLogic.isActual(today, t)) {
@@ -349,6 +399,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onBackground() {
         stoppedAt = SystemClock.elapsedRealtime()
         controller.pause()
+    }
+
+    /** ТВ выключен (экран ушёл в standby через CEC): выйти из плеера, не оставляя поток в фоне. */
+    fun onTvOff() {
+        stoppedAt = 0L                    // чтобы после включения ТВ не «воскресал» старый канал
+        osd.value = false
+        screen.value = Screen.PLAYER
+        controller.stopPlayback()
     }
 
     fun showToast(msg: String) {

@@ -114,6 +114,34 @@ class Repository(ctx: Context) {
             }.getOrNull()
         }
 
+    // ---------- обновление релиза ----------
+
+    /** Версия из app_version.txt на шаре (null - файла нет или сеть недоступна). */
+    fun fetchUpdateVersion(base: String): String? = runCatching {
+        val c = URL("$base/local/iptv/app_version.txt?t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
+        c.connectTimeout = 3000
+        c.readTimeout = 3000
+        c.setRequestProperty("User-Agent", Endpoints.USER_AGENT)
+        if (c.responseCode != 200) return@runCatching null
+        c.inputStream.use { it.readBytes().toString(Charsets.UTF_8).trim() }.ifEmpty { null }
+    }.getOrNull()
+
+    /** Скачивает APK обновления в кэш: iptv/update.apk.tmp -> update.apk. */
+    suspend fun downloadUpdate(base: String): File? = withContext(Dispatchers.IO) {
+        runCatching {
+            val c = URL("$base/local/iptv/app-release.apk").openConnection() as HttpURLConnection
+            c.connectTimeout = 4000
+            c.readTimeout = 60000
+            c.setRequestProperty("User-Agent", Endpoints.USER_AGENT)
+            if (c.responseCode != 200) return@runCatching null
+            val tmp = File(dir, "update.apk.tmp")
+            c.inputStream.use { i -> tmp.outputStream().buffered().use { o -> i.copyTo(o) } }
+            val out = File(dir, "update.apk")
+            if (!tmp.renameTo(out)) out   // rename может не сработать - оставляем tmp
+            out.takeIf { it.length() > 0 }
+        }.getOrNull()
+    }
+
     private class TeeInputStream(private val src: InputStream, private val out: OutputStream) : InputStream() {
         override fun read(): Int { val b = src.read(); if (b >= 0) out.write(b); return b }
         override fun read(b: ByteArray, off: Int, len: Int): Int {
