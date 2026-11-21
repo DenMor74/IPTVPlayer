@@ -72,9 +72,22 @@ fun GuideScreen(vm: MainViewModel) {
     val now by vm.now.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val lastGuideCh by vm.lastGuideChannel.collectAsStateWithLifecycle()
+    val lastGuideGrp by vm.lastGuideGroup.collectAsStateWithLifecycle()
 
-    var group by remember { mutableStateOf(current?.group ?: ALL) }
-    var focusedCh by remember { mutableStateOf(current) }
+    val targetCh = lastGuideCh ?: current
+
+    var group by remember(channels, targetCh?.id, lastGuideGrp) {
+        mutableStateOf(
+            lastGuideGrp?.takeIf { g ->
+                val list = if (g == ALL) channels else channels.filter { it.group == g }
+                list.any { it.id == targetCh?.id }
+            } ?: targetCh?.group?.takeIf { g ->
+                channels.any { it.group == g && it.id == targetCh.id }
+            } ?: ALL
+        )
+    }
+    var focusedCh by remember { mutableStateOf(targetCh) }
     var focusedProg by remember { mutableStateOf<Programme?>(null) }
     var pane by remember { mutableStateOf(Pane.Channels) }
     val scope = rememberCoroutineScope()
@@ -87,15 +100,33 @@ fun GuideScreen(vm: MainViewModel) {
 
     val groups by vm.guideGroups.collectAsStateWithLifecycle()
     val shown = remember(channels, group) { if (group == ALL) channels else channels.filter { it.group == group } }
-    val chList = rememberLazyListState()
+
+    val effectiveTargetCh = remember(shown, targetCh) {
+        if (targetCh != null && shown.any { it.id == targetCh.id }) {
+            targetCh
+        } else {
+            shown.firstOrNull()
+        }
+    }
+
+    val targetIdx = remember(shown, effectiveTargetCh?.id) {
+        val i = shown.indexOfFirst { it.id == effectiveTargetCh?.id }
+        if (i >= 0) i else 0
+    }
+
+    val chList = rememberLazyListState(initialFirstVisibleItemIndex = maxOf(0, targetIdx - 2))
     val currentChannelFocus = remember { FocusRequester() }
     val hm = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
-    LaunchedEffect(Unit) {
-        val i = shown.indexOfFirst { it.id == current?.id }
-        if (i >= 0) chList.scrollToItem(i)
-        delay(80)
-        runCatching { currentChannelFocus.requestFocus() }
+    LaunchedEffect(effectiveTargetCh?.id, group, shown) {
+        val i = shown.indexOfFirst { it.id == effectiveTargetCh?.id }
+        if (i >= 0) {
+            chList.scrollToItem(maxOf(0, i - 2))
+        }
+        repeat(20) {
+            delay(30)
+            if (runCatching { currentChannelFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
     }
 
     Row(
@@ -169,7 +200,11 @@ fun GuideScreen(vm: MainViewModel) {
                     ALL, channels.size, group == ALL,
                     focusRequester = if (group == ALL) catFocus else null,
                     enabled = categoriesFocused,
-                    onFocus = { group = ALL; pane = Pane.Categories }
+                    onFocus = {
+                        group = ALL
+                        pane = Pane.Categories
+                        vm.lastGuideGroup.value = ALL
+                    }
                 )
             }
             items(groups) { g ->
@@ -177,7 +212,11 @@ fun GuideScreen(vm: MainViewModel) {
                     g, channels.count { it.group == g }, group == g,
                     focusRequester = if (group == g) catFocus else null,
                     enabled = categoriesFocused,
-                    onFocus = { group = g; pane = Pane.Categories }
+                    onFocus = {
+                        group = g
+                        pane = Pane.Categories
+                        vm.lastGuideGroup.value = g
+                    }
                 )
             }
             item {
@@ -224,10 +263,16 @@ fun GuideScreen(vm: MainViewModel) {
                 }
                 FocusRow(
                     modifier = longPressKeys.then(
-                        if (ch.id == current?.id) Modifier.focusRequester(currentChannelFocus) else Modifier
+                        if (ch.id == effectiveTargetCh?.id) Modifier.focusRequester(currentChannelFocus) else Modifier
                     ),
                     selected = ch.id == current?.id,
-                    onFocus = { focusedCh = ch; focusedProg = null; pane = Pane.Channels },
+                    onFocus = {
+                        focusedCh = ch
+                        focusedProg = null
+                        pane = Pane.Channels
+                        vm.lastGuideChannel.value = ch
+                        vm.lastGuideGroup.value = group
+                    },
                     onClick = { vm.playChannel(ch); vm.closeOverlay() }
                 ) {
                     // Логотип канала вместо цифры, максимум крупно. Нет логотипа - крупная цифра.

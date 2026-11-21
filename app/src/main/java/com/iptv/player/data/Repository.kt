@@ -137,7 +137,8 @@ class Repository(ctx: Context) {
             val tmp = File(dir, "update.apk.tmp")
             c.inputStream.use { i -> tmp.outputStream().buffered().use { o -> i.copyTo(o) } }
             val out = File(dir, "update.apk")
-            if (!tmp.renameTo(out)) out   // rename может не сработать - оставляем tmp
+            out.delete()                    // без этого повторный rename блокируется старым файлом
+            if (!tmp.renameTo(out)) return@runCatching tmp.takeIf { it.length() > 0 }
             out.takeIf { it.length() > 0 }
         }.getOrNull()
     }

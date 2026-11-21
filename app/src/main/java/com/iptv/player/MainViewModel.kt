@@ -47,6 +47,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val channels = MutableStateFlow<List<Channel>>(emptyList())
     val current = MutableStateFlow<Channel?>(null)
+    val lastGuideChannel = MutableStateFlow<Channel?>(null)
+    val lastGuideGroup = MutableStateFlow<String?>(null)
     val epg = MutableStateFlow<Map<String, List<Programme>>>(emptyMap())
     val epgInfo = MutableStateFlow("Программа: не загружена")
     val playlistInfo = MutableStateFlow("Плейлист: не загружен")
@@ -115,6 +117,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Скачивает APK и запускает системный установщик. */
     fun startUpdate() {
         val ctx = getApplication<Application>()
+        // Android 8+: без разрешения «Установка из неизвестных источников» установщик молча закрывается
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !ctx.packageManager.canRequestPackageInstalls()) {
+            showToast("Нужно разрешить установку APK")
+            runCatching {
+                ctx.startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        android.net.Uri.parse("package:${ctx.packageName}")
+                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure { showToast("Включите «Установка из неизвестных источников» в настройках приложения") }
+            return
+        }
         showToast("Скачиваю обновление...")
         viewModelScope.launch {
             val apk = repo.downloadUpdate(base())
@@ -354,6 +369,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- управление плеером ----------
     fun playChannel(ch: Channel, showOsd: Boolean = true) {
         current.value = ch
+        lastGuideChannel.value = ch
         settings.lastChannelId = ch.id
         controller.play(ch)
         if (showOsd) showOsd()
