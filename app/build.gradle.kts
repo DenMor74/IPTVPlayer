@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "2.5.7"
+        versionName = "2.5.9"
     }
     buildTypes {
         release {

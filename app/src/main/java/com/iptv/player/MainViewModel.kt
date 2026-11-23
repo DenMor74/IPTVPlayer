@@ -35,7 +35,9 @@ data class UiSettings(
     val terrKind: String, val terrId: String, val terrLabel: String,
     val pcm: Boolean, val fontSize: String,
     val clockOverlay: Boolean, val clockPosition: String,
-    val logos: Boolean
+    val logos: Boolean,
+    val nightAlways: Boolean, val nightAuto: Boolean, val nightStartMinutes: Int,
+    val nightThresholdDb: Int, val nightReleaseMs: Int
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -74,13 +76,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.haAddress, settings.showClock, settings.debugOverlay,
         settings.terrKind, settings.terrId, settings.terrLabel, settings.pcmAudioOnly,
         settings.fontSize, settings.clockOverlay, settings.clockPosition,
-        settings.showLogos
+        settings.showLogos, settings.nightAlways, settings.nightAuto, settings.nightStartMinutes,
+        settings.nightThresholdDb, settings.nightReleaseMs
     )
 
     init {
         favorites.value = settings.favorites
         startRemoteServer()
-        viewModelScope.launch { while (true) { now.value = System.currentTimeMillis(); delay(15_000) } }
+        viewModelScope.launch { while (true) { now.value = System.currentTimeMillis(); applyNightMode(); delay(15_000) } }
         viewModelScope.launch { startup() }
         viewModelScope.launch { checkUpdate() }
         viewModelScope.launch { epgWatcher() }
@@ -444,7 +447,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.pcmAudioOnly = v
         // Режим звука шит в AudioSink при создании: пересоздаём контроллер, продолжая тот же канал
         val old = controllerInstance
-        controllerInstance = PlayerController(getApplication(), v)
+        controllerInstance = PlayerController(getApplication(), v, nightActiveNow(), settings.nightThresholdDb, settings.nightReleaseMs)
         controllerFlow.value = controllerInstance
         current.value?.let { playChannel(it, showOsd = false) }
         old.release()
@@ -452,6 +455,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         showToast(if (v) "Звук: только PCM - громкость с пульта приставки" else "Звук: AC3/E-AC3 передаются на ТВ")
     }
     fun setDebug(v: Boolean) { settings.debugOverlay = v; ui.value = readUi() }
+
+    // ---------- ночной режим (лимитер громких звуков, только в режиме «Звук только PCM») ----------
+
+    private companion object {
+        /** Конец ночного окна: 08:00. */
+        const val NIGHT_END_MINUTES = 8 * 60
+
+        /** Границы настроек лимитера (см. SettingsScreen). */
+        const val NIGHT_THRESHOLD_MIN = -24
+        const val NIGHT_THRESHOLD_MAX = -6
+        const val NIGHT_RELEASE_MIN = 100
+        const val NIGHT_RELEASE_MAX = 800
+    }
+
+    fun setNightAlways(v: Boolean) { settings.nightAlways = v; ui.value = readUi(); applyNightMode() }
+    fun setNightAuto(v: Boolean) { settings.nightAuto = v; ui.value = readUi(); applyNightMode() }
+    fun setNightStartMinutes(min: Int) {
+        settings.nightStartMinutes = ((min % 1440) + 1440) % 1440
+        ui.value = readUi(); applyNightMode()
+    }
+    fun setNightThresholdDb(v: Int) {
+        settings.nightThresholdDb = v.coerceIn(NIGHT_THRESHOLD_MIN, NIGHT_THRESHOLD_MAX)
+        ui.value = readUi(); applyNightMode()
+    }
+    fun setNightReleaseMs(v: Int) {
+        settings.nightReleaseMs = v.coerceIn(NIGHT_RELEASE_MIN, NIGHT_RELEASE_MAX)
+        ui.value = readUi(); applyNightMode()
+    }
+
+    /** Ночной режим активен сейчас: PCM + («постоянно» или попадание в окно [начало, 08:00)). */
+    private fun nightActiveNow(): Boolean {
+        if (!settings.pcmAudioOnly) return false
+        if (settings.nightAlways) return true
+        if (!settings.nightAuto) return false
+        val cal = Calendar.getInstance()
+        val cur = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val start = settings.nightStartMinutes
+        return if (start <= NIGHT_END_MINUTES) cur >= start && cur < NIGHT_END_MINUTES
+        else cur >= start || cur < NIGHT_END_MINUTES
+    }
+
+    /**
+     * Пуш параметров лимитера в контроллер на лету: и вкл/выкл (пробуждение окна ловит тикер
+     * каждые 15 с), и порог/спад (volatile-записи, дёшево - гоняем при каждом изменении).
+     */
+    private fun applyNightMode() {
+        controllerInstance.setNightSettings(nightActiveNow(), settings.nightThresholdDb, settings.nightReleaseMs)
+    }
     fun setFontSize(v: String) { settings.fontSize = v; ui.value = readUi() }
     fun setTerrestrial(kind: String, id: String, label: String) {
         settings.terrKind = kind; settings.terrId = id; settings.terrLabel = label
@@ -551,7 +602,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val ch = resolveExternalChannel(uri)
         if (ch != null) playChannel(ch) else showToast("Канал не найден: $uri")
     }
-
     private fun resolveExternalChannel(uri: android.net.Uri): Channel? = when (uri.scheme?.lowercase()) {
         // iptvplayer://play?num=11 | ?name=рен тв | ?url=<адрес потока>
         "iptvplayer" -> {

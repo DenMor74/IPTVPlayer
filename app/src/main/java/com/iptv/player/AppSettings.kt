@@ -35,6 +35,31 @@ class AppSettings(ctx: Context) {
         get() = p.getBoolean("pcm", false)
         set(v) = p.edit { putBoolean("pcm", v) }
 
+    /** Ночной режим (лимитер громких звуков): действует постоянно. Работает только в режиме «Звук только PCM». */
+    var nightAlways: Boolean
+        get() = p.getBoolean("night_always", false)
+        set(v) = p.edit { putBoolean("night_always", v) }
+
+    /** Ночной режим: автоматическое включение по времени (с nightStartMinutes до 08:00). */
+    var nightAuto: Boolean
+        get() = p.getBoolean("night_auto", false)
+        set(v) = p.edit { putBoolean("night_auto", v) }
+
+    /** Время начала ночного режима в минутах от полуночи (кратно 30); конец окна фиксирован - 08:00. */
+    var nightStartMinutes: Int
+        get() = p.getInt("night_start", 22 * 60)
+        set(v) = p.edit { putInt("night_start", v) }
+
+    /** Порог ночного режима в дБFS: всё громче прижимается к нему (-6 … -24). */
+    var nightThresholdDb: Int
+        get() = p.getInt("night_threshold_db", -6)
+        set(v) = p.edit { putInt("night_threshold_db", v) }
+
+    /** Время спада ночного режима, мс (100 … 800): скорость возврата обычной громкости. */
+    var nightReleaseMs: Int
+        get() = p.getInt("night_release_ms", 200)
+        set(v) = p.edit { putInt("night_release_ms", v) }
+
     var lastChannelId: String?
         get() = p.getString("last", null)
         set(v) = p.edit { putString("last", v) }

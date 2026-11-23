@@ -108,6 +108,27 @@ fun SettingsScreen(vm: MainViewModel) {
             }
 
             SwitchRow("Звук только PCM", "Громкость регулируется пультом приставки на всех каналах (AC3/E-AC3 декодируются, без передачи на ТВ)", ui.pcm) { vm.setPcm(it) }
+            SwitchRow("Ночной режим — всегда", "Прижимает громкие звуки (лимитер). Требуется «Звук только PCM»", ui.nightAlways) { vm.setNightAlways(it) }
+            SwitchRow("Ночной режим — по времени", "Включается автоматически, до 08:00. Требуется «Звук только PCM»", ui.nightAuto) { vm.setNightAuto(it) }
+            if (ui.nightAuto) {
+                NightStartRow(ui.nightStartMinutes) { vm.setNightStartMinutes(it) }
+            }
+            if (ui.nightAlways || ui.nightAuto) {
+                NightStepRow(
+                    "Порог сжатия",
+                    "Звуки громче этого уровня прижимаются к нему. Ниже порог — тише ночью",
+                    "${ui.nightThresholdDb} дБ",
+                    onMinus = { vm.setNightThresholdDb(ui.nightThresholdDb - 3) },
+                    onPlus = { vm.setNightThresholdDb(ui.nightThresholdDb + 3) }
+                )
+                NightStepRow(
+                    "Время спада",
+                    "Как быстро возвращается обычная громкость после громкого звука",
+                    "${ui.nightReleaseMs} мс",
+                    onMinus = { vm.setNightReleaseMs(ui.nightReleaseMs - 100) },
+                    onPlus = { vm.setNightReleaseMs(ui.nightReleaseMs + 100) }
+                )
+            }
             SwitchRow("Иконки каналов", "Загружать логотипы из плейлиста (tvg-logo), с кэшем. Отключите на слабых устройствах", ui.logos) { vm.setLogos(it) }
             SwitchRow("Отладка буфера", "Сегменты и статистика в правом нижнем углу при просмотре", ui.debug) { vm.setDebug(it) }
 
@@ -233,6 +254,67 @@ private fun TerrestrialPicker(haAvailable: Boolean, onPick: (TerrTarget) -> Unit
                     }
                 }
             }
+        }
+    }
+}
+
+/** Время включения ночного режима: шаг 30 минут, окно всегда до 08:00. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NightStartRow(current: Int, onSelect: (Int) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (focused) Accent.copy(alpha = 0.12f) else Color.Transparent)
+            .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column {
+            Text("Время включения ночного режима", color = Color.White, fontSize = 24.sp)
+            Text("Действует с выбранного времени до 08:00", color = Muted, fontSize = 16.sp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            OptionButton("− 30 мин", selected = false) { onSelect(current - 30) }
+            Text("%02d:%02d".format(current / 60, current % 60), color = Accent, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            OptionButton("+ 30 мин", selected = false) { onSelect(current + 30) }
+        }
+    }
+}
+
+/** Регулировка параметра ночного режима шагами «−/+» (пульт): порог в дБ, спад в мс. */
+@Composable
+private fun NightStepRow(
+    title: String,
+    subtitle: String,
+    value: String,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (focused) Accent.copy(alpha = 0.12f) else Color.Transparent)
+            .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column {
+            Text(title, color = Color.White, fontSize = 24.sp)
+            Text(subtitle, color = Muted, fontSize = 16.sp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            OptionButton("−", selected = false) { onMinus() }
+            Text(value, color = Accent, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            OptionButton("+", selected = false) { onPlus() }
         }
     }
 }

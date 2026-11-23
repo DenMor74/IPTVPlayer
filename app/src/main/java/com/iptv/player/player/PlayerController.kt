@@ -57,10 +57,32 @@ class DebugState {
  * Канал переключается заменой MediaItem (без пересоздания плеера).
  */
 @OptIn(UnstableApi::class)
-class PlayerController(private val ctx: Context, private val pcmOnly: Boolean) {
+class PlayerController(
+    private val ctx: Context,
+    private val pcmOnly: Boolean,
+    nightMode: Boolean = false,
+    nightThresholdDb: Int = -6,
+    nightReleaseMs: Int = 200
+) {
     val debug = DebugState()
     private val main = Handler(Looper.getMainLooper())
     private var retries = 0
+    // Ночной режим (лимитер громких звуков). Работает только на PCM-пути,
+    // поэтому осмыслен вместе с pcmOnly; параметры меняются на лету.
+    // ВАЖНО: DefaultRenderersFactory строит несколько аудио-рендереров, каждый со своим AudioSink,
+    // поэтому NightModeProcessor создаётся отдельно под каждый sink, а общими остаются параметры.
+    private val nightState = NightModeState().apply {
+        enabled = nightMode
+        thresholdDb = nightThresholdDb
+        releaseMs = nightReleaseMs
+    }
+
+    /** Обновить параметры лимитера на лету. */
+    fun setNightSettings(on: Boolean, thresholdDb: Int, releaseMs: Int) {
+        nightState.enabled = on
+        nightState.thresholdDb = thresholdDb
+        nightState.releaseMs = releaseMs
+    }
     // minBufferMs = 40s, maxBufferMs = 45s: быстрый старт (150мс), отсутствие нижнего порога
     // и постоянная равномерная дозагрузка сегментов каждые ~5 сек для удержания максимального буфера.
     private val loadControl = DefaultLoadControl.Builder()
@@ -96,6 +118,7 @@ class PlayerController(private val ctx: Context, private val pcmOnly: Boolean) {
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .setAudioCapabilities(caps)
+                .setAudioProcessors(arrayOf(NightModeProcessor(nightState)))
                 .build()
         }
     }.apply {
@@ -201,7 +224,7 @@ class PlayerController(private val ctx: Context, private val pcmOnly: Boolean) {
 
         val item = MediaItem.Builder()
             .setUri(ch.url)
-            .setMimeType(MimeTypes.APPLICATION_M3U8)       // без «обнюхивания» формата
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
             .setLiveConfiguration(
                 MediaItem.LiveConfiguration.Builder()
                     // большой целевой отступ: старт с начала короткого манифеста от прокси, а не «от края эфира»
