@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -62,7 +63,8 @@ class PlayerController(
     private val pcmOnly: Boolean,
     nightMode: Boolean = false,
     nightThresholdDb: Int = -6,
-    nightReleaseMs: Int = 200
+    nightReleaseMs: Int = 200,
+    autoRestart: Boolean = true
 ) {
     val debug = DebugState()
     private val main = Handler(Looper.getMainLooper())
@@ -182,6 +184,7 @@ class PlayerController(
         })
         player.addAnalyticsListener(object : AnalyticsListener {
             override fun onLoadStarted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData) {
+                lastLoadMs = SystemClock.elapsedRealtime()
                 if (mediaLoadData.dataType != C.DATA_TYPE_MEDIA) return
                 add(SegBox(loadEventInfo.loadTaskId, mediaLoadData.mediaStartTimeMs, mediaLoadData.mediaEndTimeMs, SegState.LOADING))
             }
@@ -200,6 +203,78 @@ class PlayerController(
         })
     }
 
+    // ---------- сторож зависания: буфер исчерпан и сегменты не приходят -> перезапрос к серверу ----------
+
+    private companion object {
+        /** Период проверки буфера. */
+        const val STALL_TICK_MS = 1000L
+
+        /** Сколько секунд подряд нет сегментов и буфера до перезапуска запроса. */
+        const val STALL_TICKS_TO_RESTART = 3L
+
+        /** Сколько перезапросов подряд допустимо без восстановления воспроизведения. */
+        const val STALL_MAX_RESTARTS = 3
+
+        /** Запас буфера ниже которого канал считается «на сухом пайпе». */
+        const val STALL_BUFFER_GAP_MS = 1000L
+    }
+
+    /** Настройка «автоперезапуск при зависании» (переключается из ViewModel на лету). */
+    private var stallCheckEnabled = autoRestart
+    private var stallTicks = 0L
+    private var stallRestarts = 0
+    private var lastLoadMs = SystemClock.elapsedRealtime()
+    private var lastStallPos = Long.MIN_VALUE
+
+    private val stallTick: Runnable = object : Runnable {
+        override fun run() {
+            if (stallCheckEnabled) checkStall()
+            main.postDelayed(this, STALL_TICK_MS)
+        }
+    }.also { main.postDelayed(it, STALL_TICK_MS) }
+
+    fun setAutoRestart(on: Boolean) {
+        stallCheckEnabled = on
+        if (!on) { stallTicks = 0; stallRestarts = 0 }
+    }
+
+    private fun checkStall() {
+        val p = player
+        // Проверяем только реально играющие live-каналы: на паузе и в ошибках тишина - норма
+        if (current == null || p.playbackState != Player.STATE_READY || !p.playWhenReady) {
+            stallTicks = 0
+            return
+        }
+        val pos = p.currentPosition
+        val gap = p.bufferedPosition - pos
+        val loadIdleMs = SystemClock.elapsedRealtime() - lastLoadMs
+        val stalled = gap < STALL_BUFFER_GAP_MS && loadIdleMs > 2_000
+        if (stalled) {
+            stallTicks++
+            if (stallTicks >= STALL_TICKS_TO_RESTART) {
+                if (stallRestarts >= STALL_MAX_RESTARTS) {
+                    // Три перезапуска не помогли - не зацикливаемся, ждём восстановления сами
+                    if (stallRestarts == STALL_MAX_RESTARTS) {
+                        stallRestarts++
+                        error.value = "Канал завис, перезапуск не помог"
+                    }
+                    return
+                }
+                stallRestarts++
+                error.value = "Канал завис, перезапрашиваю... ($stallRestarts/$STALL_MAX_RESTARTS)"
+                stallTicks = 0
+                // Тот же механизм, что при сетевых ошибках: свежий запрос плейлиста/сегментов
+                p.stop()
+                p.prepare()
+            }
+        } else {
+            stallTicks = 0
+            // Воспроизведение реально двинулось - счётчик перезапусков можно обнулить
+            if (pos != lastStallPos) stallRestarts = 0
+        }
+        lastStallPos = pos
+    }
+
     private fun add(b: SegBox) {
         debug.segs.add(b)
         while (debug.segs.size > 30) debug.segs.removeAt(0)
@@ -213,6 +288,9 @@ class PlayerController(
     fun play(ch: Channel) {
         current = ch
         retries = 0
+        stallTicks = 0
+        stallRestarts = 0
+        lastLoadMs = SystemClock.elapsedRealtime()
         debug.segs.clear()
 
         // Новый канал - звук снова разрешён; если кодек опять не поддерживается,

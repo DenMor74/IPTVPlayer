@@ -37,13 +37,13 @@ data class UiSettings(
     val clockOverlay: Boolean, val clockPosition: String,
     val logos: Boolean,
     val nightAlways: Boolean, val nightAuto: Boolean, val nightStartMinutes: Int,
-    val nightThresholdDb: Int, val nightReleaseMs: Int
+    val nightLevel: Int, val nightReleaseMs: Int, val autoRestart: Boolean
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = AppSettings(app)
     private val repo = Repository(app)
-    private var controllerInstance = PlayerController(app, settings.pcmAudioOnly)
+    private var controllerInstance = PlayerController(app, settings.pcmAudioOnly, autoRestart = settings.autoRestart)
     val controller: PlayerController get() = controllerInstance
     val controllerFlow = MutableStateFlow(controllerInstance)   // для UI: перестроение при смене режима звука
 
@@ -77,7 +77,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.terrKind, settings.terrId, settings.terrLabel, settings.pcmAudioOnly,
         settings.fontSize, settings.clockOverlay, settings.clockPosition,
         settings.showLogos, settings.nightAlways, settings.nightAuto, settings.nightStartMinutes,
-        settings.nightThresholdDb, settings.nightReleaseMs
+        settings.nightLevel, settings.nightReleaseMs, settings.autoRestart
     )
 
     init {
@@ -447,7 +447,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.pcmAudioOnly = v
         // Режим звука шит в AudioSink при создании: пересоздаём контроллер, продолжая тот же канал
         val old = controllerInstance
-        controllerInstance = PlayerController(getApplication(), v, nightActiveNow(), settings.nightThresholdDb, settings.nightReleaseMs)
+        controllerInstance = PlayerController(
+            getApplication(), v, nightActiveNow(),
+            thresholdDbForLevel(settings.nightLevel), settings.nightReleaseMs, settings.autoRestart
+        )
         controllerFlow.value = controllerInstance
         current.value?.let { playChannel(it, showOsd = false) }
         old.release()
@@ -463,10 +466,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         const val NIGHT_END_MINUTES = 8 * 60
 
         /** Границы настроек лимитера (см. SettingsScreen). */
-        const val NIGHT_THRESHOLD_MIN = -24
-        const val NIGHT_THRESHOLD_MAX = -6
+        const val NIGHT_LEVEL_MIN = 1
+        const val NIGHT_LEVEL_MAX = 6
         const val NIGHT_RELEASE_MIN = 100
         const val NIGHT_RELEASE_MAX = 800
+
+        /** Порог лимитера в дБFS по шкале подавления 1…6 (для процессора и подсказки). */
+        fun thresholdDbForLevel(level: Int): Int = when (level.coerceIn(NIGHT_LEVEL_MIN, NIGHT_LEVEL_MAX)) {
+            6 -> -24
+            else -> -3 * level - 3
+        }
     }
 
     fun setNightAlways(v: Boolean) { settings.nightAlways = v; ui.value = readUi(); applyNightMode() }
@@ -475,13 +484,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.nightStartMinutes = ((min % 1440) + 1440) % 1440
         ui.value = readUi(); applyNightMode()
     }
-    fun setNightThresholdDb(v: Int) {
-        settings.nightThresholdDb = v.coerceIn(NIGHT_THRESHOLD_MIN, NIGHT_THRESHOLD_MAX)
+    fun setNightLevel(v: Int) {
+        settings.nightLevel = v.coerceIn(NIGHT_LEVEL_MIN, NIGHT_LEVEL_MAX)
         ui.value = readUi(); applyNightMode()
     }
     fun setNightReleaseMs(v: Int) {
         settings.nightReleaseMs = v.coerceIn(NIGHT_RELEASE_MIN, NIGHT_RELEASE_MAX)
         ui.value = readUi(); applyNightMode()
+    }
+    fun setAutoRestart(v: Boolean) {
+        settings.autoRestart = v
+        ui.value = readUi()
+        controllerInstance.setAutoRestart(v)
     }
 
     /** Ночной режим активен сейчас: PCM + («постоянно» или попадание в окно [начало, 08:00)). */
@@ -501,7 +515,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * каждые 15 с), и порог/спад (volatile-записи, дёшево - гоняем при каждом изменении).
      */
     private fun applyNightMode() {
-        controllerInstance.setNightSettings(nightActiveNow(), settings.nightThresholdDb, settings.nightReleaseMs)
+        controllerInstance.setNightSettings(nightActiveNow(), thresholdDbForLevel(settings.nightLevel), settings.nightReleaseMs)
     }
     fun setFontSize(v: String) { settings.fontSize = v; ui.value = readUi() }
     fun setTerrestrial(kind: String, id: String, label: String) {

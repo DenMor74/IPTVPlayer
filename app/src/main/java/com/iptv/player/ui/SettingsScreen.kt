@@ -115,11 +115,13 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             if (ui.nightAlways || ui.nightAuto) {
                 NightStepRow(
-                    "Порог сжатия",
-                    "Звуки громче этого уровня прижимаются к нему. Ниже порог — тише ночью",
-                    "${ui.nightThresholdDb} дБ",
-                    onMinus = { vm.setNightThresholdDb(ui.nightThresholdDb - 3) },
-                    onPlus = { vm.setNightThresholdDb(ui.nightThresholdDb + 3) }
+                    "Степень подавления",
+                    "1 — давит только самые громкие пики (взрывы, заставки), речь не трогает. " +
+                        "6 — максимум: громкое почти исчезает, ровный тихий звук. " +
+                        "Громкие звуки прижимаются к порогу, тихая речь звучит как обычно",
+                    "${ui.nightLevel} / 6",
+                    onMinus = { vm.setNightLevel(ui.nightLevel - 1) },
+                    onPlus = { vm.setNightLevel(ui.nightLevel + 1) }
                 )
                 NightStepRow(
                     "Время спада",
@@ -130,6 +132,11 @@ fun SettingsScreen(vm: MainViewModel) {
                 )
             }
             SwitchRow("Иконки каналов", "Загружать логотипы из плейлиста (tvg-logo), с кэшем. Отключите на слабых устройствах", ui.logos) { vm.setLogos(it) }
+            SwitchRow(
+                "Автоперезапуск канала",
+                "Если буфер кончился и сегменты с сервера не приходят ~3 с — перезапросить канал (до 3 раз подряд). Лечит зависания потоков",
+                ui.autoRestart
+            ) { vm.setAutoRestart(it) }
             SwitchRow("Отладка буфера", "Сегменты и статистика в правом нижнем углу при просмотре", ui.debug) { vm.setDebug(it) }
 
             FontSizeRow(ui.fontSize) { vm.setFontSize(it) }

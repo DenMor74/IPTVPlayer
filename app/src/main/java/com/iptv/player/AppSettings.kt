@@ -50,15 +50,27 @@ class AppSettings(ctx: Context) {
         get() = p.getInt("night_start", 22 * 60)
         set(v) = p.edit { putInt("night_start", v) }
 
-    /** Порог ночного режима в дБFS: всё громче прижимается к нему (-6 … -24). */
-    var nightThresholdDb: Int
-        get() = p.getInt("night_threshold_db", -6)
-        set(v) = p.edit { putInt("night_threshold_db", v) }
+    /** Степень подавления ночного режима: 1 (мягко) … 6 (максимально). В дБ переводи MainViewModel. */
+    var nightLevel: Int
+        get() {
+            // Миграция со старой шкалы в дБ (-6 … -24, шаг 3): -6 -> 1, -9 -> 2, и т.д.
+            if (!p.contains("night_level") && p.contains("night_threshold_db")) {
+                val lvl = (p.getInt("night_threshold_db", -6) + 6) / -3
+                return lvl.coerceIn(1, 6)
+            }
+            return p.getInt("night_level", 1)
+        }
+        set(v) = p.edit { putInt("night_level", v) }
 
     /** Время спада ночного режима, мс (100 … 800): скорость возврата обычной громкости. */
     var nightReleaseMs: Int
         get() = p.getInt("night_release_ms", 200)
         set(v) = p.edit { putInt("night_release_ms", v) }
+
+    /** Перезапрос к серверу, когда буфер исчерпан и сегменты не приходят ~3 с (до 3 раз подряд). */
+    var autoRestart: Boolean
+        get() = p.getBoolean("auto_restart", true)
+        set(v) = p.edit { putBoolean("auto_restart", v) }
 
     var lastChannelId: String?
         get() = p.getString("last", null)
